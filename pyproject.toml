@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pebblemind"
+version = "0.1.0"
+description = "CPU-First Local AI Assistant with Privacy-First Architecture"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "PebbleMind Team", email = "team@pebblemind.ai"}
+]
+keywords = ["ai", "assistant", "local", "cpu", "privacy", "llm", "rag", "voice"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "llama-cpp-python>=0.2.90",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "sentence-transformers>=2.2.0",
+    "sqlite-vec>=0.1.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.0.0",
+    "python-multipart>=0.0.6",
+    "httpx>=0.25.0",
+    "rich>=13.0.0",
+    "click>=8.0.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.0.0",
+    "flake8>=6.0.0",
+    "pre-commit>=3.0.0",
+]
+voice = [
+    "pyaudio>=0.2.13",
+    "soundfile>=0.11.0",
+    "librosa>=0.10.0",
+]
+desktop = [
+    "tauri>=2.0.0",
+    "tauri-cli>=2.0.0",
+]
+
+[project.scripts]
+pebblemind = "pebblemind.cli:main"
+pebblemind-api = "pebblemind.api.server:main"
+
+[project.urls]
+Homepage = "https://github.com/pebblemind/pebblemind"
+Documentation = "https://pebblemind.readthedocs.io/"
+Repository = "https://github.com/pebblemind/pebblemind"
+Issues = "https://github.com/pebblemind/pebblemind/issues"
+Changelog = "https://github.com/pebblemind/pebblemind/blob/main/CHANGELOG.md"

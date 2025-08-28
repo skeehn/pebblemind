@@ -1,0 +1,56 @@
+# PebbleMind Configuration File
+# This file contains all settings for PebbleMind components
+
+# LLM (Large Language Model) Configuration
+llm:
+  model_path: "models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+  model_name: "Qwen2.5-1.5B-Instruct"
+  context_length: 4096
+  max_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 40
+  threads: -1  # -1 for auto-detection
+  batch_size: 512
+  enable_blas: true
+  blas_vendor: "OpenBLAS"
+  enable_native: true
+
+# Voice Processing Configuration
+voice:
+  stt_model: "base.en"  # Whisper model: tiny.en, base.en, small.en, medium.en, large-v3
+  stt_threads: 4
+  tts_model: "amy-low"  # Piper voice: amy-low, lessac-medium, etc.
+  tts_threads: 4
+  sample_rate: 22050
+  channels: 1
+
+# RAG (Retrieval-Augmented Generation) Configuration
+rag:
+  embedding_model: "BAAI/bge-small-en-v1.5"
+  embedding_dim: 384
+  vector_db_path: "./data/vectors.db"
+  chunk_size: 512
+  chunk_overlap: 50
+  max_results: 5
+  similarity_threshold: 0.7
+
+# API Server Configuration
+api:
+  host: "localhost"
+  port: 8000
+  cors_origins:
+    - "*"
+  api_key: null  # Set to enable authentication
+
+# Desktop Application Configuration
+desktop:
+  window_width: 1200
+  window_height: 800
+  enable_tray: true
+  start_minimized: false
+
+# General Configuration
+data_dir: "./data"
+cache_dir: "./cache"
+log_level: "INFO"
