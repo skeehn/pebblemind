@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PebbleMind - CPU-First AI Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <h1>
+        🧠 PebbleMind
+      </h1>
+      <div class="status">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Connecting...</span>
+        <select class="model-selector" id="modelSelector">
+          <option value="3b">3B Model (Balanced)</option>
+          <option value="1.5b">1.5B Model (Ultra-light)</option>
+          <option value="7b">7B Model (High-quality)</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div class="chat-container">
+        <!-- Welcome Screen -->
+        <div class="welcome-screen" id="welcomeScreen">
+          <h2>Welcome to PebbleMind</h2>
+          <p>Your privacy-first, CPU-optimized AI assistant. All processing happens locally on your device.</p>
+          
+          <div class="feature-grid">
+            <div class="feature-card">
+              <h3>🚀 Local Processing</h3>
+              <p>No cloud dependencies. Your data stays on your device.</p>
+            </div>
+            <div class="feature-card">
+              <h3>⚡ CPU Optimized</h3>
+              <p>Efficient inference with BLAS acceleration and K-quantization.</p>
+            </div>
+            <div class="feature-card">
+              <h3>🎯 Smart Models</h3>
+              <p>Choose between 1.5B, 3B, and 7B models based on your needs.</p>
+            </div>
+            <div class="feature-card">
+              <h3>🔄 Dynamic Switching</h3>
+              <p>Change models on-the-fly without restarting.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Messages -->
+        <div class="messages" id="messages" style="display: none;"></div>
+        <div class="loading-indicator" id="loadingIndicator">AI is thinking...</div>
+      </div>
+
+      <!-- Input Area -->
+      <div class="input-area">
+        <div class="input-container">
+          <textarea 
+            class="input-box" 
+            id="messageInput" 
+            placeholder="Type your message... (Shift+Enter for new line)"
+            rows="1"
+          ></textarea>
+          <button class="send-button" id="sendButton" title="Send message (Ctrl+Enter)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
