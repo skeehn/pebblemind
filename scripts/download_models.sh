@@ -33,11 +33,24 @@ download_with_progress() {
     fi
 }
 
-# Download Qwen2.5-1.5B Instruct GGUF model
+# Download Qwen2.5 models (1.5B, 3B, 7B)
 echo ""
-echo "📥 Downloading LLM Model (Qwen2.5-1.5B Instruct)..."
-QWEN_URL="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-download_with_progress "$QWEN_URL" "models/qwen2.5-1.5b-instruct-q4_k_m.gguf" "Qwen2.5-1.5B GGUF Model"
+echo "📥 Downloading LLM Models (Qwen2.5 Instruct)..."
+
+# 1.5B Model (Ultra-light CPU)
+echo "  Downloading 1.5B model (ultra-light)..."
+QWEN_15B_URL="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+download_with_progress "$QWEN_15B_URL" "models/qwen2.5-1.5b-instruct-q4_k_m.gguf" "Qwen2.5-1.5B GGUF Model"
+
+# 3B Model (Balanced - Default)
+echo "  Downloading 3B model (balanced - recommended)..."
+QWEN_3B_URL="https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
+download_with_progress "$QWEN_3B_URL" "models/qwen2.5-3b-instruct-q4_k_m.gguf" "Qwen2.5-3B GGUF Model"
+
+# 7B Model (High-quality with GPU offload)
+echo "  Downloading 7B model (high-quality)..."
+QWEN_7B_URL="https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf"
+download_with_progress "$QWEN_7B_URL" "models/qwen2.5-7b-instruct-q4_k_m.gguf" "Qwen2.5-7B GGUF Model"
 
 # Download BGE-small embedding model
 echo ""
@@ -79,12 +92,21 @@ echo "🎉 Model download complete!"
 echo ""
 echo "📂 Models downloaded to: $(pwd)/models/"
 echo ""
+echo "📊 Qwen2.5 Model Strategy:"
+echo "  • 1.5B Model: Ultra-light CPU usage, fastest responses"
+echo "  • 3B Model:  Balanced quality/speed (default recommended)"
+echo "  • 7B Model:  Highest quality, best with GPU offloading"
+echo "  • All models use K-quantization (q4_K_M) for optimal CPU performance"
+echo ""
 echo "📋 Next steps:"
-echo "1. Update pebblemind.yaml with correct model paths"
-echo "2. Run: pebblemind status"
-echo "3. Try: pebblemind chat --interactive"
+echo "1. Configure your preferred model size in pebblemind.yaml"
+echo "2. Enable GPU offloading if you have compatible hardware"
+echo "3. Run: pebblemind status"
+echo "4. Try: pebblemind chat --interactive"
+echo "5. Switch models anytime: pebblemind switch-model [1.5b|3b|7b]"
 echo ""
 echo "💡 Tips:"
-echo "- Use ggml-tiny.en.bin for faster speech recognition"
-echo "- Use amy-low for fastest text-to-speech"
-echo "- Use lessac-medium for higher quality voices"
+echo "- Start with 3B model for best balance of quality and speed"
+echo "- Use 1.5B on resource-constrained systems"
+echo "- Enable GPU offloading for 7B model to get best performance"
+echo "- All models support dynamic switching without restart"

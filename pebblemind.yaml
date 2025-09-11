@@ -3,8 +3,9 @@
 
 # LLM (Large Language Model) Configuration
 llm:
-  model_path: "models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-  model_name: "Qwen2.5-1.5B-Instruct"
+  model_path: ""  # Auto-detected based on model_size
+  model_name: "Qwen2.5-3B-Instruct"
+  model_size: "3b"  # Options: 1.5b (ultra-light), 3b (balanced), 7b (high-quality)
   context_length: 4096
   max_tokens: 512
   temperature: 0.7
@@ -15,6 +16,9 @@ llm:
   enable_blas: true
   blas_vendor: "OpenBLAS"
   enable_native: true
+  enable_gpu_offload: false  # Enable for mixed CPU/GPU inference
+  gpu_layers: -1  # Number of layers to offload (-1 for auto)
+  auto_detect_gpu: true  # Automatically detect GPU availability
 
 # Voice Processing Configuration
 voice:

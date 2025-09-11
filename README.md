@@ -19,7 +19,10 @@ A privacy-first, CPU-optimized AI assistant that runs entirely on your local mac
 
 Based on latest research and testing:
 
-- **LLM Inference**: 50.7 tokens/second on AMD Ryzen AI 9 HX 375 with Qwen2.5-1.5B
+- **LLM Inference**: 50.7 tokens/second on AMD Ryzen AI 9 HX 375 with Qwen2.5-3B (default)
+- **Model Strategy**: 1.5B (ultra-light), 3B (balanced), 7B (high-quality) with K-quantization
+- **Dynamic Switching**: Change models without restarting the application
+- **GPU Offloading**: Automatic detection and mixed CPU/GPU inference
 - **BLAS Acceleration**: 30%+ performance improvements with OpenBLAS
 - **Voice Processing**: Sub-second transcription with whisper.cpp
 - **TTS Synthesis**: Real-time speech generation with Piper
@@ -62,10 +65,11 @@ sudo apt-get install llvm libomp-dev libopenblas-dev
 # Create models directory
 mkdir -p models
 
-# Download Qwen2.5-1.5B Instruct (GGUF format)
-# Visit: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
-# Download: qwen2.5-1.5b-instruct-q4_k_m.gguf
-# Place in: models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+# Download Qwen2.5 models (GGUF format with K-quantization)
+# 1.5B: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+# 3B: https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF (default)
+# 7B: https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF
+# All models use q4_K_M quantization for optimal CPU performance
 
 # Download BGE-small embedding model
 pip install huggingface_hub
@@ -81,7 +85,7 @@ huggingface-cli download BAAI/bge-small-en-v1.5 --local-dir models/bge-small-en-
 # Initialize configuration
 pebblemind init
 
-# Edit configuration to set model paths
+# Edit configuration to set model size and GPU offloading
 nano pebblemind.yaml
 
 # Start interactive chat
@@ -89,6 +93,11 @@ pebblemind chat --interactive
 
 # Single query
 pebblemind chat "Hello, how are you?"
+
+# Switch to different model size
+pebblemind switch-model 1.5b  # Ultra-light
+pebblemind switch-model 3b    # Balanced (default)
+pebblemind switch-model 7b    # High-quality
 
 # Start API server
 pebblemind serve
@@ -107,12 +116,14 @@ Create a `pebblemind.yaml` configuration file:
 ```yaml
 # LLM Configuration
 llm:
-  model_path: "models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+  model_size: "3b"  # Options: 1.5b (ultra-light), 3b (balanced), 7b (high-quality)
   context_length: 4096
   max_tokens: 512
   temperature: 0.7
   enable_blas: true
   blas_vendor: "OpenBLAS"
+  enable_gpu_offload: false  # Enable for mixed CPU/GPU inference
+  gpu_layers: 0  # Number of layers to offload (-1 for auto)
 
 # Voice Configuration
 voice:
@@ -244,10 +255,11 @@ export GGML_N_THREADS=16
 
 ### Model Optimization
 
-- Use **GGUF quantized models** for better performance
-- **Q4_K_M** quantization provides best balance of quality/speed
-- **Q3_K_L** for maximum speed on slower CPUs
-- **Q5_K_M** for higher quality on faster CPUs
+- **1.5B Model**: Ultra-light, fastest responses, minimal RAM usage
+- **3B Model**: Balanced quality/speed, recommended for most users
+- **7B Model**: Highest quality, best for complex reasoning tasks
+- **K-quantization**: All models use q4_K_M for optimal CPU performance
+- **GPU Offloading**: Enable for significant speed improvements with 7B model
 
 ## 🔒 Privacy & Security
 

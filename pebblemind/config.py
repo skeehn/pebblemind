@@ -9,8 +9,9 @@ from pydantic import BaseModel, Field
 
 class LLMConfig(BaseModel):
     """Configuration for LLM inference"""
-    model_path: str = Field(..., description="Path to the LLM model file")
-    model_name: str = Field(default="Qwen2.5-1.5B-Instruct", description="Model name")
+    model_path: str = Field(default="", description="Path to the LLM model file (auto-detected if empty)")
+    model_name: str = Field(default="Qwen2.5-3B-Instruct", description="Model name")
+    model_size: str = Field(default="3b", description="Model size: 1.5b, 3b, 7b")
     context_length: int = Field(default=4096, description="Maximum context length")
     max_tokens: int = Field(default=512, description="Maximum tokens to generate")
     temperature: float = Field(default=0.7, description="Sampling temperature")
@@ -21,6 +22,9 @@ class LLMConfig(BaseModel):
     enable_blas: bool = Field(default=True, description="Enable BLAS acceleration")
     blas_vendor: str = Field(default="OpenBLAS", description="BLAS vendor to use")
     enable_native: bool = Field(default=True, description="Enable native optimizations")
+    enable_gpu_offload: bool = Field(default=False, description="Enable GPU layer offloading")
+    gpu_layers: int = Field(default=0, description="Number of layers to offload to GPU (-1 for auto)")
+    auto_detect_gpu: bool = Field(default=True, description="Automatically detect and configure GPU")
 
 
 class VoiceConfig(BaseModel):

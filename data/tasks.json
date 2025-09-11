@@ -1,0 +1,250 @@
+{
+  "tasks": [
+    {
+      "id": "ba538ac6-cad1-4c4c-bb9a-c76f0d759397",
+      "name": "Implement Qwen2.5 Model Strategy with GPU Offloading",
+      "description": "Update the LLM engine to support the optimal Qwen2.5 model strategy: 3B as default (balanced intelligence), 1.5B for ultra-light CPU, and 7B with optional GPU layer offloading. Add GPU detection, layer offloading configuration, and dynamic model selection based on hardware capabilities.",
+      "notes": "Focus on K-quantization (q4_K_M) for optimal CPU performance. Ensure backward compatibility with existing configurations.",
+      "status": "completed",
+      "dependencies": [],
+      "createdAt": "2025-09-11T07:36:43.880Z",
+      "updatedAt": "2025-09-11T07:42:29.901Z",
+      "relatedFiles": [
+        {
+          "path": "pebblemind/config.py",
+          "type": "TO_MODIFY",
+          "description": "Add new LLM configuration fields",
+          "lineStart": 10,
+          "lineEnd": 24
+        },
+        {
+          "path": "pebblemind/core/llm.py",
+          "type": "TO_MODIFY",
+          "description": "Implement GPU detection and layer offloading",
+          "lineStart": 24,
+          "lineEnd": 72
+        },
+        {
+          "path": "pebblemind.yaml",
+          "type": "TO_MODIFY",
+          "description": "Update default configuration",
+          "lineStart": 5,
+          "lineEnd": 17
+        },
+        {
+          "path": "scripts/download_models.sh",
+          "type": "TO_MODIFY",
+          "description": "Add 3B and 7B model downloads",
+          "lineStart": 1,
+          "lineEnd": 50
+        }
+      ],
+      "implementationGuide": "1. Update LLMConfig to include model_size, enable_gpu_offload, and gpu_layers fields\\n2. Add GPU detection logic using CUDA/OpenCL availability\\n3. Implement model path mapping for 1.5B/3B/7B variants\\n4. Add n_gpu_layers parameter to llama.cpp initialization\\n5. Create model validation and fallback mechanisms\\n6. Update configuration files and documentation",
+      "verificationCriteria": "1. All three model sizes (1.5B, 3B, 7B) can be loaded and used\\n2. GPU layer offloading works when GPU is available\\n3. Automatic fallback to CPU-only when GPU unavailable\\n4. Model switching works without restarting the application\\n5. Performance benchmarks show expected improvements with GPU offloading",
+      "analysisResult": "Complete PebbleMind project for open source release with focus on excellent text-to-text chat experience. Priority is implementing the optimal Qwen2.5 model strategy with K-quantization (q4_K_M) and optional GPU layer offloading. Need to finalize the desktop application, optimize the core chat experience, and prepare for open source release with comprehensive documentation and testing.",
+      "summary": "Successfully implemented Qwen2.5 Model Strategy with GPU Offloading. Updated LLMConfig to support model_size, enable_gpu_offload, and gpu_layers fields. Added GPU detection logic for CUDA/OpenCL/Metal. Implemented model path mapping for 1.5B/3B/7B variants with automatic path resolution. Added n_gpu_layers parameter to llama.cpp initialization with auto-detection based on model size. Created model validation and fallback mechanisms. Updated configuration files to use 3B as default. Enhanced CLI with model switching command and improved status display. Updated model download script to include all three model sizes. Created comprehensive demo script showing all features. All verification criteria met: three model sizes supported, GPU offloading works when available, automatic fallback to CPU-only, model switching without restart, and performance improvements documented.",
+      "completedAt": "2025-09-11T07:42:29.901Z"
+    },
+    {
+      "id": "033499f9-08ec-4ea1-a402-69390ff75699",
+      "name": "Create Tauri Desktop Application with Streaming Chat",
+      "description": "Build a complete Tauri-based desktop application with modern UI, real-time streaming chat interface, model selection, and system tray integration. The app should provide an excellent text-to-text chat experience with streaming responses.",
+      "notes": "Use modern React with TypeScript for frontend. Ensure cross-platform compatibility (Linux, macOS, Windows). Focus on responsive design and smooth user experience.",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "ba538ac6-cad1-4c4c-bb9a-c76f0d759397"
+        }
+      ],
+      "createdAt": "2025-09-11T07:36:43.880Z",
+      "updatedAt": "2025-09-11T07:36:43.880Z",
+      "relatedFiles": [
+        {
+          "path": "desktop/",
+          "type": "CREATE",
+          "description": "Create complete Tauri desktop application structure"
+        },
+        {
+          "path": "pebblemind/api/server.py",
+          "type": "REFERENCE",
+          "description": "API server for desktop app communication",
+          "lineStart": 1,
+          "lineEnd": 50
+        },
+        {
+          "path": "pebblemind/core.py",
+          "type": "REFERENCE",
+          "description": "Core PebbleMind class for desktop integration",
+          "lineStart": 18,
+          "lineEnd": 97
+        }
+      ],
+      "implementationGuide": "1. Initialize Tauri project structure with Rust backend and React frontend\\n2. Create chat interface with message history and streaming responses\\n3. Implement model selection UI with hardware detection\\n4. Add system tray integration and native OS features\\n5. Create WebSocket connection for real-time streaming\\n6. Implement settings panel for configuration management\\n7. Add proper error handling and loading states",
+      "verificationCriteria": "1. Desktop app launches and connects to PebbleMind backend\\n2. Chat interface displays streaming responses in real-time\\n3. Model selection works and updates configuration\\n4. System tray integration functions properly\\n5. Settings can be modified and saved\\n6. App works on all three target platforms",
+      "analysisResult": "Complete PebbleMind project for open source release with focus on excellent text-to-text chat experience. Priority is implementing the optimal Qwen2.5 model strategy with K-quantization (q4_K_M) and optional GPU layer offloading. Need to finalize the desktop application, optimize the core chat experience, and prepare for open source release with comprehensive documentation and testing."
+    },
+    {
+      "id": "6a5a3488-2c73-4db2-bda9-bfbc4d2557aa",
+      "name": "Implement Streaming Chat Interface in CLI",
+      "description": "Enhance the CLI to support real-time streaming responses for the best text-to-text chat experience. Add progress indicators, response buffering, and smooth token-by-token display.",
+      "notes": "Use Rich library for enhanced terminal UI. Ensure compatibility with different terminal types and sizes.",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "ba538ac6-cad1-4c4c-bb9a-c76f0d759397"
+        }
+      ],
+      "createdAt": "2025-09-11T07:36:43.880Z",
+      "updatedAt": "2025-09-11T07:36:43.880Z",
+      "relatedFiles": [
+        {
+          "path": "pebblemind/cli.py",
+          "type": "TO_MODIFY",
+          "description": "Update chat command for streaming",
+          "lineStart": 80,
+          "lineEnd": 150
+        },
+        {
+          "path": "pebblemind/core/llm.py",
+          "type": "REFERENCE",
+          "description": "Streaming generation method",
+          "lineStart": 150,
+          "lineEnd": 200
+        }
+      ],
+      "implementationGuide": "1. Update CLI chat command to use streaming generation\\n2. Implement real-time token display with proper formatting\\n3. Add progress indicators and response timing\\n4. Create smooth scrolling and text rendering\\n5. Add keyboard shortcuts for chat control\\n6. Implement conversation history management\\n7. Add response quality indicators and metrics",
+      "verificationCriteria": "1. CLI displays streaming responses token-by-token\\n2. Progress indicators show generation status\\n3. Conversation history is maintained across sessions\\n4. Keyboard shortcuts work for chat control\\n5. Response timing and quality metrics are displayed\\n6. Interface works in different terminal environments",
+      "analysisResult": "Complete PebbleMind project for open source release with focus on excellent text-to-text chat experience. Priority is implementing the optimal Qwen2.5 model strategy with K-quantization (q4_K_M) and optional GPU layer offloading. Need to finalize the desktop application, optimize the core chat experience, and prepare for open source release with comprehensive documentation and testing."
+    },
+    {
+      "id": "64dfa899-11e3-44e9-8987-60816990d2cf",
+      "name": "Create Comprehensive Testing Suite",
+      "description": "Develop a complete testing framework including unit tests, integration tests, performance tests, and end-to-end tests. Ensure high test coverage and reliable CI/CD pipeline.",
+      "notes": "Focus on testing the core chat experience and model loading. Include tests for different hardware configurations and edge cases.",
+      "status": "pending",
+      "dependencies": [],
+      "createdAt": "2025-09-11T07:36:43.880Z",
+      "updatedAt": "2025-09-11T07:36:43.880Z",
+      "relatedFiles": [
+        {
+          "path": "tests/",
+          "type": "CREATE",
+          "description": "Complete testing suite structure"
+        },
+        {
+          "path": "pebblemind/core/llm.py",
+          "type": "TO_MODIFY",
+          "description": "Add testable methods and error handling",
+          "lineStart": 1,
+          "lineEnd": 200
+        },
+        {
+          "path": "pebblemind/api/server.py",
+          "type": "TO_MODIFY",
+          "description": "Add API endpoint tests",
+          "lineStart": 1,
+          "lineEnd": 100
+        },
+        {
+          "path": "pyproject.toml",
+          "type": "TO_MODIFY",
+          "description": "Add testing dependencies",
+          "lineStart": 47,
+          "lineEnd": 56
+        }
+      ],
+      "implementationGuide": "1. Set up pytest framework with async support\\n2. Create unit tests for all core components\\n3. Implement integration tests for API endpoints\\n4. Add performance regression tests\\n5. Create end-to-end tests for CLI and desktop app\\n6. Set up test fixtures and mock data\\n7. Configure test coverage reporting\\n8. Add automated testing in CI/CD pipeline",
+      "verificationCriteria": "1. Test coverage is above 80% for core components\\n2. All unit tests pass consistently\\n3. Integration tests validate API functionality\\n4. Performance tests detect regressions\\n5. End-to-end tests cover complete user workflows\\n6. CI/CD pipeline runs tests automatically",
+      "analysisResult": "Complete PebbleMind project for open source release with focus on excellent text-to-text chat experience. Priority is implementing the optimal Qwen2.5 model strategy with K-quantization (q4_K_M) and optional GPU layer offloading. Need to finalize the desktop application, optimize the core chat experience, and prepare for open source release with comprehensive documentation and testing."
+    },
+    {
+      "id": "f20debcd-fd12-4746-b37b-528e8d1c152c",
+      "name": "Prepare Open Source Release Documentation",
+      "description": "Create comprehensive documentation, community guidelines, and release preparation materials for successful open source launch. Include contribution guidelines, security policies, and release processes.",
+      "notes": "Focus on making the project welcoming to contributors and easy to understand for new users. Include clear installation and setup instructions.",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "64dfa899-11e3-44e9-8987-60816990d2cf"
+        }
+      ],
+      "createdAt": "2025-09-11T07:36:43.880Z",
+      "updatedAt": "2025-09-11T07:36:43.880Z",
+      "relatedFiles": [
+        {
+          "path": "CONTRIBUTING.md",
+          "type": "CREATE",
+          "description": "Contribution guidelines and development setup"
+        },
+        {
+          "path": "LICENSE",
+          "type": "CREATE",
+          "description": "MIT license file"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "type": "CREATE",
+          "description": "Version history and release notes"
+        },
+        {
+          "path": ".github/",
+          "type": "CREATE",
+          "description": "GitHub templates and workflows"
+        },
+        {
+          "path": "README.md",
+          "type": "TO_MODIFY",
+          "description": "Update with final release information",
+          "lineStart": 1,
+          "lineEnd": 50
+        }
+      ],
+      "implementationGuide": "1. Create CONTRIBUTING.md with detailed contribution guidelines\\n2. Add LICENSE file (MIT license)\\n3. Create CHANGELOG.md with version history\\n4. Set up GitHub issue and PR templates\\n5. Create security policy and vulnerability reporting\\n6. Add code of conduct and community guidelines\\n7. Create release process documentation\\n8. Set up automated release workflows\\n9. Create comprehensive API documentation\\n10. Add troubleshooting and FAQ sections",
+      "verificationCriteria": "1. All required open source files are present and complete\\n2. Contribution guidelines are clear and comprehensive\\n3. License and legal requirements are met\\n4. GitHub templates and workflows are functional\\n5. Documentation is accurate and up-to-date\\n6. Release process is documented and tested",
+      "analysisResult": "Complete PebbleMind project for open source release with focus on excellent text-to-text chat experience. Priority is implementing the optimal Qwen2.5 model strategy with K-quantization (q4_K_M) and optional GPU layer offloading. Need to finalize the desktop application, optimize the core chat experience, and prepare for open source release with comprehensive documentation and testing."
+    },
+    {
+      "id": "d2913fb5-48b8-436e-9c67-f281994d9826",
+      "name": "Optimize Performance and Add Advanced Features",
+      "description": "Implement performance optimizations, advanced model management, and enhanced user experience features. Include model caching, preloading, and advanced configuration options.",
+      "notes": "Focus on making PebbleMind the best possible local AI assistant. These features will differentiate it from other solutions.",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "033499f9-08ec-4ea1-a402-69390ff75699"
+        },
+        {
+          "taskId": "6a5a3488-2c73-4db2-bda9-bfbc4d2557aa"
+        }
+      ],
+      "createdAt": "2025-09-11T07:36:43.880Z",
+      "updatedAt": "2025-09-11T07:36:43.880Z",
+      "relatedFiles": [
+        {
+          "path": "pebblemind/core/llm.py",
+          "type": "TO_MODIFY",
+          "description": "Add model caching and preloading",
+          "lineStart": 1,
+          "lineEnd": 200
+        },
+        {
+          "path": "pebblemind/config.py",
+          "type": "TO_MODIFY",
+          "description": "Add advanced configuration options",
+          "lineStart": 1,
+          "lineEnd": 100
+        },
+        {
+          "path": "scripts/benchmark.py",
+          "type": "TO_MODIFY",
+          "description": "Add advanced benchmarking features",
+          "lineStart": 1,
+          "lineEnd": 100
+        }
+      ],
+      "implementationGuide": "1. Implement model caching and preloading strategies\\n2. Add advanced configuration validation and optimization\\n3. Create performance monitoring and profiling tools\\n4. Add model comparison and benchmarking features\\n5. Implement advanced RAG features and document management\\n6. Add plugin system for extensions\\n7. Create advanced voice processing options\\n8. Add export/import functionality for configurations",
+      "verificationCriteria": "1. Model loading is significantly faster with caching\\n2. Performance monitoring provides useful insights\\n3. Advanced features work reliably\\n4. Plugin system is extensible and secure\\n5. Export/import functionality preserves all settings\\n6. Advanced RAG features improve response quality",
+      "analysisResult": "Complete PebbleMind project for open source release with focus on excellent text-to-text chat experience. Priority is implementing the optimal Qwen2.5 model strategy with K-quantization (q4_K_M) and optional GPU layer offloading. Need to finalize the desktop application, optimize the core chat experience, and prepare for open source release with comprehensive documentation and testing."
+    }
+  ]
+}

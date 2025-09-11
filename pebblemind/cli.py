@@ -72,22 +72,44 @@ def status(ctx: click.Context):
         console.print(f"\nData Directory: {config.data_path}")
         console.print(f"Cache Directory: {config.cache_path}")
 
+        # Show model information
+        if status_info['components']['llm']:
+            async def get_model_info():
+                return await pebblemind.llm_engine.get_model_info()
+
+            model_info = asyncio.run(get_model_info())
+            if model_info.get('status') == 'loaded':
+                console.print(f"\n[bold]Current Model:[/bold]")
+                console.print(f"  Name: {model_info.get('model_name', 'Unknown')}")
+                console.print(f"  Size: {model_info.get('model_size', 'Unknown')}")
+                console.print(f"  File Size: {model_info.get('file_size_gb', 0):.2f} GB")
+                console.print(f"  GPU Offload: {'Enabled' if model_info.get('gpu_offload_enabled') else 'Disabled'}")
+                if model_info.get('gpu_offload_enabled'):
+                    console.print(f"  GPU Layers: {model_info.get('gpu_layers', 0)}")
+                console.print(f"  Available Models: {', '.join(model_info.get('available_models', []))}")
+
     except Exception as e:
         console.print(f"[red]Error getting status: {e}[/red]")
 
 
 @cli.command()
 @click.option("--model", "-m", help="Path to LLM model file")
+@click.option("--model-size", help="Model size: 1.5b, 3b, 7b")
 @click.option("--interactive", "-i", is_flag=True, help="Start interactive chat")
 @click.argument("message", required=False)
 @click.pass_context
-def chat(ctx: click.Context, model: Optional[str], interactive: bool, message: Optional[str]):
+def chat(ctx: click.Context, model: Optional[str], model_size: Optional[str], interactive: bool, message: Optional[str]):
     """Chat with PebbleMind"""
     config = ctx.obj["config"]
 
-    # Update model path if provided
+    # Update model configuration if provided
     if model:
         config.llm.model_path = model
+    if model_size:
+        if model_size not in ["1.5b", "3b", "7b"]:
+            console.print(f"[red]Invalid model size: {model_size}. Use: 1.5b, 3b, 7b[/red]")
+            return
+        config.llm.model_size = model_size
 
     try:
         pebblemind = quick_start()
@@ -262,6 +284,54 @@ def add_docs(ctx: click.Context, documents: tuple, recursive: bool):
 
     except Exception as e:
         console.print(f"[red]Error adding documents: {e}[/red]")
+
+
+@cli.command()
+@click.argument("model_size", type=click.Choice(["1.5b", "3b", "7b"]))
+@click.pass_context
+def switch_model(ctx: click.Context, model_size: str):
+    """Switch to a different model size"""
+    config = ctx.obj["config"]
+
+    try:
+        pebblemind = quick_start()
+
+        async def switch():
+            with console.status(f"[bold green]Switching to {model_size} model...", spinner="dots"):
+                success = await pebblemind.llm_engine.switch_model(model_size)
+            return success
+
+        success = asyncio.run(switch())
+
+        if success:
+            console.print(f"[green]Successfully switched to {model_size} model[/green]")
+            
+            # Show model info
+            async def get_info():
+                return await pebblemind.llm_engine.get_model_info()
+
+            info = asyncio.run(get_info())
+            console.print(f"\n[bold]Model Details:[/bold]")
+            console.print(f"  Name: {info.get('model_name', 'Unknown')}")
+            console.print(f"  Size: {info.get('model_size', 'Unknown').upper()}")
+            console.print(f"  File Size: {info.get('file_size_gb', 0):.2f} GB")
+            console.print(f"  GPU Available: {'Yes' if info.get('gpu_available') else 'No'}")
+            console.print(f"  GPU Offload: {'Enabled' if info.get('gpu_offload_enabled') else 'Disabled'}")
+            if info.get('gpu_offload_enabled'):
+                console.print(f"  GPU Layers: {info.get('gpu_layers', 0)}")
+            
+            # Performance tip
+            if model_size == "7b" and not info.get('gpu_offload_enabled'):
+                console.print(f"\n[yellow]💡 Tip: Enable GPU offloading for better 7B model performance[/yellow]")
+            elif model_size == "1.5b":
+                console.print(f"\n[blue]⚡ Ultra-light model active - fastest CPU responses[/blue]")
+            elif model_size == "3b":
+                console.print(f"\n[green]⚖️  Balanced model active - optimal quality/speed ratio[/green]")
+        else:
+            console.print(f"[red]Failed to switch to {model_size} model[/red]")
+
+    except Exception as e:
+        console.print(f"[red]Error switching model: {e}[/red]")
 
 
 @cli.command()
