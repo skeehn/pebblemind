@@ -276,6 +276,7 @@ class LLMEngine:
         message: str,
         context: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
+        stop_event: Optional[asyncio.Event] = None,
         **kwargs
     ):
         """Generate text response with streaming"""
@@ -321,10 +322,15 @@ class LLMEngine:
             )
 
             for chunk in stream:
+                # Allow external cancellation
+                if stop_event and stop_event.is_set():
+                    break
                 if "choices" in chunk and chunk["choices"]:
                     delta = chunk["choices"][0].get("delta", {})
                     if "content" in delta:
                         yield delta["content"]
+                # Yield control to event loop for backpressure
+                await asyncio.sleep(0)
 
         except Exception as e:
             logger.error(f"Error in streaming generation: {e}")

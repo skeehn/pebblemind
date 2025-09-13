@@ -7,13 +7,14 @@ import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
 from ..core import PebbleMind
+from ..core.streaming import sse_stream, websocket_stream
 from ..config import APIConfig
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ class APIServer:
                 raise HTTPException(status_code=404, detail="Model not found")
 
         @self.app.post("/v1/chat/completions")
-        async def create_chat_completion(request: ChatCompletionRequest):
+        async def create_chat_completion(request: ChatCompletionRequest, raw_request: Request):
             """Create chat completion (OpenAI-compatible)"""
             try:
                 # Extract user message from the conversation
@@ -158,6 +159,7 @@ class APIServer:
                             user_message,
                             system_prompt,
                             request.model,
+                            raw_request,
                             **gen_params
                         ),
                         media_type="text/plain"
@@ -254,66 +256,78 @@ class APIServer:
                 logger.error(f"Speech generation failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
+        @self.app.websocket("/ws/chat")
+        async def websocket_chat(websocket: WebSocket):
+            await websocket.accept()
+            try:
+                data = await websocket.receive_json()
+                message = data.get("message", "")
+                system_prompt = data.get("system_prompt")
+
+                gen_params = {}
+                for param in ["max_tokens", "temperature", "top_p", "top_k"]:
+                    if param in data:
+                        gen_params[param] = data[param]
+
+                stop_event = asyncio.Event()
+
+                async def cancel_listener():
+                    try:
+                        while True:
+                            msg = await websocket.receive_json()
+                            if msg.get("action") == "cancel":
+                                stop_event.set()
+                                break
+                    except WebSocketDisconnect:
+                        stop_event.set()
+
+                listener = asyncio.create_task(cancel_listener())
+
+                generator = self.pebblemind.llm_engine.generate_stream(
+                    message,
+                    system_prompt=system_prompt,
+                    stop_event=stop_event,
+                    **gen_params
+                )
+
+                await websocket_stream(websocket, generator, stop_event)
+                listener.cancel()
+            except WebSocketDisconnect:
+                logger.info("WebSocket disconnected")
+
+
     async def _stream_chat_completion(
         self,
         message: str,
         system_prompt: Optional[str],
         model: str,
+        raw_request: Request,
         **kwargs
     ):
         """Stream chat completion response"""
-        try:
-            start_time = time.time()
+        stop_event = asyncio.Event()
 
-            # Stream the response
-            response_text = ""
-            async for chunk in self.pebblemind.llm_engine.generate_stream(
+        async def disconnect_watcher():
+            if await raw_request.is_disconnected():
+                stop_event.set()
+
+        watcher_task = asyncio.create_task(disconnect_watcher())
+
+        try:
+            generator = self.pebblemind.llm_engine.generate_stream(
                 message,
                 system_prompt=system_prompt,
+                stop_event=stop_event,
                 **kwargs
-            ):
-                response_text += chunk
-
-                # Create SSE-compatible chunk
-                data = {
-                    "id": f"chatcmpl-{int(start_time)}",
-                    "object": "chat.completion.chunk",
-                    "created": int(start_time),
-                    "model": model,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {"content": chunk},
-                        "finish_reason": None
-                    }]
-                }
-
-                yield f"data: {json.dumps(data)}\n\n"
-
-            # Send final chunk
-            final_data = {
-                "id": f"chatcmpl-{int(start_time)}",
-                "object": "chat.completion.chunk",
-                "created": int(start_time),
-                "model": model,
-                "choices": [{
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": "stop"
-                }]
-            }
-
-            yield f"data: {json.dumps(final_data)}\n\n"
-            yield "data: [DONE]\n\n"
-
+            )
+            async for chunk in sse_stream(generator, model, raw_request):
+                yield chunk
         except Exception as e:
             logger.error(f"Streaming failed: {e}")
-            error_data = {
-                "error": {
-                    "message": str(e),
-                    "type": "internal_error"
-                }
-            }
+            error_data = {"error": {"message": str(e), "type": "internal_error"}}
             yield f"data: {json.dumps(error_data)}\n\n"
+        finally:
+            watcher_task.cancel()
 
     async def start(self) -> None:
         """Start the API server"""
