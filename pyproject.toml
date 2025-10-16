@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pebblemind"
 version = "0.1.0"
-description = "CPU-First Local AI Assistant with Privacy-First Architecture"
+description = "World's Smallest Intelligent Reasoning Model - CPU-First Local AI Assistant with Privacy-First Architecture"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [

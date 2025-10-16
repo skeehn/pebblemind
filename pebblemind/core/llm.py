@@ -1,4 +1,4 @@
-"""LLM Engine using llama.cpp with BLAS acceleration"""
+"""LLM Engine using llama.cpp with BLAS acceleration - Optimized for Lightweight Devices"""
 
 import asyncio
 import logging
@@ -108,7 +108,7 @@ class LLMEngine:
         return True
 
     async def initialize(self) -> None:
-        """Initialize the LLM model with optimized settings"""
+        """Initialize the LLM model with optimized settings for lightweight devices like MacBook Air"""
         if self._initialized:
             return
 
@@ -120,68 +120,77 @@ class LLMEngine:
 
             logger.info(f"Initializing LLM engine with model: {self.config.model_name} ({self.config.model_size})")
 
-            # Detect GPU availability
-            if self.config.auto_detect_gpu:
-                self._gpu_available = self._detect_gpu_availability()
-                logger.info(f"GPU detection: {'Available' if self._gpu_available else 'Not available'}")
+            # Set conservative parameters for lightweight devices
+            if self.config.threads == -1 or self.config.threads > 6:
+                # Use fewer threads for lightweight devices to avoid overheating
+                import multiprocessing
+                self.config.threads = min(6, max(2, multiprocessing.cpu_count() - 2))
+                
+            if self.config.context_length > 2048:
+                # Reduce context length for better memory efficiency on lightweight devices
+                self.config.context_length = min(self.config.context_length, 2048)
 
             # Set BLAS optimization environment variables
             if self.config.enable_blas:
                 self._configure_blas()
 
-            # Set thread optimization
-            if self.config.threads == -1:
-                # Auto-detect optimal thread count
-                import multiprocessing
-                self.config.threads = max(1, multiprocessing.cpu_count() // 2)
-
-            # Model loading parameters
+            # Model loading parameters - optimized for lightweight devices
             model_params = {
                 "model_path": model_path,
                 "n_ctx": self.config.context_length,
                 "n_threads": self.config.threads,
                 "n_batch": self.config.batch_size,
                 "verbose": False,  # Reduce logging noise
+                "n_gpu_layers": 0,  # CPU-only by default for consistent performance on all devices
+                "use_mlock": False,  # Disable mlock to reduce memory pressure on lightweight devices
+                "use_mmap": True,    # Use memory mapping for efficiency
+                "low_vram": True,    # Optimize for low VRAM (even though using CPU)
             }
 
             # Add BLAS-specific optimizations if enabled
             if self.config.enable_blas:
                 model_params.update({
                     "blas_vendor": self.config.blas_vendor,
-                    "use_mlock": True,  # Lock model in memory
-                    "use_mmap": True,   # Memory map the model
                 })
 
             # Add native optimizations if enabled
             if self.config.enable_native:
                 model_params["use_native"] = True
 
-            # Configure GPU offloading if enabled and available
-            if self.config.enable_gpu_offload and self._gpu_available:
-                if self.config.gpu_layers == -1:
-                    # Auto-detect optimal GPU layers based on model size
-                    if self.config.model_size == "1.5b":
-                        self.config.gpu_layers = 8  # Conservative for small model
-                    elif self.config.model_size == "3b":
-                        self.config.gpu_layers = 16  # Balanced for medium model
-                    elif self.config.model_size == "7b":
-                        self.config.gpu_layers = 24  # More aggressive for large model
-                    else:
-                        self.config.gpu_layers = 16  # Default
+            # Only enable GPU offloading if explicitly requested and available
+            # For lightweight devices, CPU-only is often more predictable
+            if self.config.enable_gpu_offload:
+                if self.config.auto_detect_gpu:
+                    self._gpu_available = self._detect_gpu_availability()
+                    logger.info(f"GPU detection: {'Available' if self._gpu_available else 'Not available'}")
                 
-                model_params["n_gpu_layers"] = self.config.gpu_layers
-                logger.info(f"GPU offloading enabled: {self.config.gpu_layers} layers")
+                if self._gpu_available:
+                    if self.config.gpu_layers == -1:
+                        # Conservative GPU offloading for balanced performance
+                        if self.config.model_size == "1.5b":
+                            self.config.gpu_layers = 8
+                        elif self.config.model_size == "3b":
+                            self.config.gpu_layers = 16
+                        elif self.config.model_size == "7b":
+                            self.config.gpu_layers = 24  # Only for larger models where it makes sense
+                        else:
+                            self.config.gpu_layers = 16
+                    
+                    model_params["n_gpu_layers"] = self.config.gpu_layers
+                    logger.info(f"GPU offloading enabled: {self.config.gpu_layers} layers")
+                else:
+                    model_params["n_gpu_layers"] = 0
+                    logger.info("GPU not available, using CPU-only mode")
             else:
                 model_params["n_gpu_layers"] = 0
-                if self.config.enable_gpu_offload and not self._gpu_available:
-                    logger.warning("GPU offloading requested but GPU not available, using CPU-only")
+                logger.info("Using CPU-only mode for consistent performance")
 
             # Load the model (this may take a while)
-            logger.info("Loading LLM model... This may take a few minutes.")
+            logger.info("Loading LLM model with optimizations for lightweight devices...")
             self.model = Llama(**model_params)
 
             self._initialized = True
-            logger.info("LLM engine initialized successfully")
+            logger.info("LLM engine initialized successfully with optimizations for lightweight devices")
 
         except Exception as e:
             logger.error(f"Failed to initialize LLM engine: {e}")
@@ -214,44 +223,47 @@ class LLMEngine:
         system_prompt: Optional[str] = None,
         **kwargs
     ) -> str:
-        """Generate text response using the LLM"""
+        """Generate text response using the LLM with optimizations for lightweight devices"""
         if not self._initialized or not self.model:
             raise RuntimeError("LLM engine not initialized")
 
         try:
-            # Build the conversation context
+            # Build the conversation context efficiently
             messages = []
 
             # Add system prompt if provided
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             else:
-                # Default system prompt
+                # Efficient system prompt optimized for lightweight devices
                 messages.append({
                     "role": "system",
-                    "content": "You are PebbleMind, a helpful and knowledgeable AI assistant. "
-                              "You provide accurate, helpful responses while being concise and clear."
+                    "content": (
+                        "You are PebbleMind, a highly efficient AI assistant running on lightweight hardware. "
+                        "Provide concise, accurate responses with clear reasoning. "
+                        "Focus on being helpful while maintaining efficiency."
+                    )
                 })
 
-            # Add context documents if provided
+            # Add context efficiently (limit the amount to maintain performance)
             if context:
-                context_text = "\n\n".join(context)
-                messages.append({
-                    "role": "system",
-                    "content": f"Relevant context information:\n{context_text}"
-                })
+                # Only take the most recent context items to maintain efficiency
+                recent_context = context[-3:] if len(context) > 3 else context
+                for ctx in recent_context:
+                    messages.append({"role": "system", "content": f"Context: {ctx}"})
 
             # Add user message
             messages.append({"role": "user", "content": message})
 
-            # Generation parameters
+            # Generation parameters optimized for lightweight devices
             generation_params = {
                 "messages": messages,
-                "max_tokens": kwargs.get("max_tokens", self.config.max_tokens),
-                "temperature": kwargs.get("temperature", self.config.temperature),
-                "top_p": kwargs.get("top_p", self.config.top_p),
+                "max_tokens": min(kwargs.get("max_tokens", self.config.max_tokens), 256),  # Limit for efficiency
+                "temperature": min(kwargs.get("temperature", self.config.temperature), 0.7),  # Conservative for quality
+                "top_p": min(kwargs.get("top_p", self.config.top_p), 0.9),  # Conservative for quality
                 "top_k": kwargs.get("top_k", self.config.top_k),
                 "stream": False,
+                "stop": ["\n\n"]  # Stop early to maintain efficiency
             }
 
             # Run generation in thread pool to avoid blocking

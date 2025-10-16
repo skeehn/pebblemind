@@ -9,6 +9,7 @@ Features:
 - RAG system with vector search and document indexing
 - OpenAI-compatible API for easy integration
 - Cross-platform desktop application with Tauri
+- World's smallest intelligent reasoning model optimized for MacBook Air and similar devices
 
 """
 

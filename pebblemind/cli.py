@@ -325,8 +325,10 @@ def switch_model(ctx: click.Context, model_size: str):
                 console.print(f"\n[yellow]💡 Tip: Enable GPU offloading for better 7B model performance[/yellow]")
             elif model_size == "1.5b":
                 console.print(f"\n[blue]⚡ Ultra-light model active - fastest CPU responses[/blue]")
+                console.print(f"\n[green]✅ Recommended for MacBook Air and lightweight devices[/green]")
             elif model_size == "3b":
                 console.print(f"\n[green]⚖️  Balanced model active - optimal quality/speed ratio[/green]")
+                console.print(f"\n[yellow]⚠️  Consider 1.5B model for better performance on MacBook Air[/yellow]")
         else:
             console.print(f"[red]Failed to switch to {model_size} model[/red]")
 

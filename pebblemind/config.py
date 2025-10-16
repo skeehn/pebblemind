@@ -8,21 +8,21 @@ from pydantic import BaseModel, Field
 
 
 class LLMConfig(BaseModel):
-    """Configuration for LLM inference"""
+    """Configuration for LLM inference optimized for lightweight devices"""
     model_path: str = Field(default="", description="Path to the LLM model file (auto-detected if empty)")
-    model_name: str = Field(default="Qwen2.5-3B-Instruct", description="Model name")
-    model_size: str = Field(default="3b", description="Model size: 1.5b, 3b, 7b")
-    context_length: int = Field(default=4096, description="Maximum context length")
-    max_tokens: int = Field(default=512, description="Maximum tokens to generate")
+    model_name: str = Field(default="Qwen2.5-1.5B-Instruct", description="Model name")
+    model_size: str = Field(default="1.5b", description="Model size: 1.5b (ultra-light, MacBook Air optimized), 3b (balanced), 7b (high-quality)")
+    context_length: int = Field(default=2048, description="Maximum context length (optimized for lightweight devices)")
+    max_tokens: int = Field(default=256, description="Maximum tokens to generate (conservative for efficiency)")
     temperature: float = Field(default=0.7, description="Sampling temperature")
     top_p: float = Field(default=0.9, description="Top-p sampling parameter")
     top_k: int = Field(default=40, description="Top-k sampling parameter")
-    threads: int = Field(default=-1, description="Number of threads (-1 for auto)")
-    batch_size: int = Field(default=512, description="Batch size for processing")
+    threads: int = Field(default=-1, description="Number of threads (-1 for auto, conservative for lightweight devices)")
+    batch_size: int = Field(default=256, description="Batch size for processing (reduced for memory efficiency)")
     enable_blas: bool = Field(default=True, description="Enable BLAS acceleration")
     blas_vendor: str = Field(default="OpenBLAS", description="BLAS vendor to use")
     enable_native: bool = Field(default=True, description="Enable native optimizations")
-    enable_gpu_offload: bool = Field(default=False, description="Enable GPU layer offloading")
+    enable_gpu_offload: bool = Field(default=False, description="Enable GPU layer offloading (CPU-only by default for consistency)")
     gpu_layers: int = Field(default=0, description="Number of layers to offload to GPU (-1 for auto)")
     auto_detect_gpu: bool = Field(default=True, description="Automatically detect and configure GPU")
 
@@ -38,13 +38,13 @@ class VoiceConfig(BaseModel):
 
 
 class RAGConfig(BaseModel):
-    """Configuration for RAG system"""
-    embedding_model: str = Field(default="BAAI/bge-small-en-v1.5", description="Embedding model")
+    """Configuration for RAG system optimized for lightweight devices"""
+    embedding_model: str = Field(default="BAAI/bge-small-en-v1.5", description="Lightweight embedding model")
     embedding_dim: int = Field(default=384, description="Embedding dimension")
     vector_db_path: str = Field(default="./data/vectors.db", description="Vector database path")
     chunk_size: int = Field(default=512, description="Document chunk size")
-    chunk_overlap: int = Field(default=50, description="Overlap between chunks")
-    max_results: int = Field(default=5, description="Maximum search results")
+    chunk_overlap: int = Field(default=32, description="Overlap between chunks (reduced for efficiency)")
+    max_results: int = Field(default=3, description="Maximum search results (reduced for efficiency)")
     similarity_threshold: float = Field(default=0.7, description="Similarity threshold")
 
 

@@ -2,14 +2,25 @@
 
 import asyncio
 import logging
+import time
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
 from .config import Config, get_config
 from .core.llm import LLMEngine
+from .efficient_reasoning import EfficientReasoningEngine
 from .voice import VoiceProcessor
 from .rag import RAGSystem
 from .api import APIServer
+from .performance_monitor import PerformanceMonitor
+from .reasoning_enhancer import ReasoningEnhancer
+from .advanced_memory import EnhancedMemoryManager
+from .tool_integration import ToolManager, FunctionCallingManager
+from .specialized_agents import AgentOrchestrator
+from .multimodal import MultiModalManager
+from .external_services import ServiceIntegrationManager
+from .system_improvements import SystemImprovementManager, ComponentOrchestrator
+from .software_30 import SelfImprovementManager
 
 
 logger = logging.getLogger(__name__)
@@ -19,7 +30,7 @@ class PebbleMind:
     """Main PebbleMind AI Assistant class"""
 
     def __init__(self, config: Optional[Config] = None):
-        """Initialize PebbleMind with configuration"""
+        """Initialize PebbleMind with configuration optimized for lightweight devices"""
         self.config = config or get_config()
         self._setup_logging()
 
@@ -28,6 +39,35 @@ class PebbleMind:
         self.voice_processor: Optional[VoiceProcessor] = None
         self.rag_system: Optional[RAGSystem] = None
         self.api_server: Optional[APIServer] = None
+
+        # Performance monitoring
+        self.performance_monitor: PerformanceMonitor = PerformanceMonitor()
+        
+        # Reasoning enhancement
+        self.reasoning_enhancer: ReasoningEnhancer = ReasoningEnhancer()
+        
+        # Advanced memory system
+        self.memory_manager: EnhancedMemoryManager = EnhancedMemoryManager()
+        
+        # Tool integration
+        self.tool_manager: ToolManager = ToolManager()
+        self.function_calling_manager: FunctionCallingManager = FunctionCallingManager(self.tool_manager)
+        
+        # Specialized agents
+        self.agent_orchestrator: AgentOrchestrator = AgentOrchestrator()
+        
+        # Multi-modal capabilities
+        self.multimodal_manager: MultiModalManager = MultiModalManager()
+        
+        # External services integration
+        self.service_integration_manager: ServiceIntegrationManager = ServiceIntegrationManager()
+        
+        # System improvements
+        self.system_improvement_manager: SystemImprovementManager = SystemImprovementManager()
+        self.coordinator: ComponentOrchestrator = ComponentOrchestrator()
+        
+        # Software 3.0 - Self-improving capabilities
+        self.self_improvement_manager: SelfImprovementManager = SelfImprovementManager()
 
         # Component status
         self._initialized = False
@@ -45,22 +85,22 @@ class PebbleMind:
         )
 
     async def initialize(self) -> None:
-        """Initialize all components"""
-        logger.info("Initializing PebbleMind...")
+        """Initialize all components with optimizations for lightweight devices"""
+        logger.info("Initializing PebbleMind with optimizations for lightweight devices...")
 
         try:
             # Create necessary directories
             self.config.data_path.mkdir(parents=True, exist_ok=True)
             self.config.cache_path.mkdir(parents=True, exist_ok=True)
 
-            # Initialize LLM engine
+            # Initialize LLM engine with efficiency optimizations
             self.llm_engine = LLMEngine(self.config.llm)
             await self.llm_engine.initialize()
 
-            # Initialize voice processor
+            # Initialize voice processor with lightweight defaults
             self.voice_processor = VoiceProcessor(self.config.voice)
 
-            # Initialize RAG system
+            # Initialize RAG system with efficiency considerations
             self.rag_system = RAGSystem(self.config.rag)
             await self.rag_system.initialize()
 
@@ -68,7 +108,7 @@ class PebbleMind:
             self.api_server = APIServer(self.config.api, self)
 
             self._initialized = True
-            logger.info("PebbleMind initialized successfully")
+            logger.info("PebbleMind initialized successfully with lightweight optimizations")
 
         except Exception as e:
             logger.error(f"Failed to initialize PebbleMind: {e}")
@@ -120,32 +160,175 @@ class PebbleMind:
         message: str,
         context: Optional[List[str]] = None,
         use_rag: bool = True,
+        enhance_reasoning: bool = True,
+        reasoning_type: Optional[str] = "analytical",
+        use_memory: bool = True,
+        use_tools: bool = True,
+        learn_from_interaction: bool = True,
         **kwargs
     ) -> str:
-        """Process a text query and return response"""
+        """Process a text query and return response with Software 3.0 self-improvement capabilities"""
         if not self._initialized:
             await self.initialize()
 
+        start_time = time.time()
+        
         try:
-            # Retrieve relevant context if RAG is enabled
+            # Check if message contains tool calls or requires complex task execution
+            if use_tools and self._contains_tool_syntax(message):
+                # Handle function calling for complex tasks
+                task_result = await self.function_calling_manager.plan_and_execute(message)
+                base_response = task_result["summary"]
+                
+                # Apply Software 3.0 optimization
+                if hasattr(self, 'self_improvement_manager'):
+                    optimized_response, opt_metadata = await self.self_improvement_manager.predict_and_optimize_response(
+                        message, base_response
+                    )
+                    response = optimized_response
+                else:
+                    response = base_response
+                
+                # Store in memory if requested
+                if use_memory:
+                    await self.memory_manager.store_conversation_memory(
+                        user_input=message,
+                        ai_response=response,
+                        importance=0.7  # Higher importance for tool execution results
+                    )
+                
+                # Learn from interaction if enabled
+                if learn_from_interaction and hasattr(self, 'self_improvement_manager'):
+                    total_time = time.time() - start_time
+                    await self.self_improvement_manager.process_interaction(
+                        message, response, response_time=total_time
+                    )
+                
+                # Capture performance metrics
+                generation_time = time.time() - start_time
+                tokens_processed = len(response.split())
+                
+                await self.performance_monitor.capture_metrics(
+                    tokens_processed=tokens_processed,
+                    generation_time=generation_time,
+                    model_size=self.config.llm.model_size,
+                    thread_count=self.config.llm.threads
+                )
+                
+                return response
+
+            # Retrieve relevant context from long-term memory if enabled
+            memory_context = []
+            if use_memory:
+                memory_context = await self.memory_manager.retrieve_relevant_context(
+                    query=message,
+                    max_memories=3  # Limit to prevent memory overload
+                )
+            
+            # Combine RAG and memory contexts
+            combined_context = []
             if use_rag and self.rag_system and context:
                 relevant_docs = await self.rag_system.search(message, k=self.config.rag.max_results)
-                context = [doc["content"] for doc in relevant_docs]
-
+                rag_context = [doc["content"] for doc in relevant_docs]
+                combined_context.extend(rag_context)
+            
+            combined_context.extend(memory_context)
+            
+            # Enhance reasoning if requested
+            if enhance_reasoning:
+                from .reasoning_enhancer import ReasoningType
+                reasoning_enum = ReasoningType[reasoning_type.upper()] if reasoning_type.upper() in ReasoningType.__members__ else ReasoningType.ANALYTICAL
+                enhanced_query_data = await self.reasoning_enhancer.apply_reasoning_pipeline(
+                    message, combined_context, reasoning_enum
+                )
+                message = enhanced_query_data["enhanced_query"]
+            
             # Generate response using LLM
             if self.llm_engine:
-                response = await self.llm_engine.generate(
+                base_response = await self.llm_engine.generate(
                     message=message,
-                    context=context,
+                    context=combined_context,
                     **kwargs
                 )
+                
+                # Process any tool calls embedded in the LLM response
+                if use_tools:
+                    tool_results = await self.tool_manager.parse_and_execute_tools(base_response)
+                    if tool_results:
+                        # Append tool results to the response
+                        tool_outputs = []
+                        for result in tool_results:
+                            if result["success"]:
+                                tool_outputs.append(f"[{result['tool_name']}: {result['result']}]")
+                            else:
+                                tool_outputs.append(f"[{result['tool_name']}: Error - {result['error']}]")
+                        base_response += "\n\nTools Output: " + " ".join(tool_outputs)
+                
+                # Apply Software 3.0 optimization
+                if hasattr(self, 'self_improvement_manager'):
+                    optimized_response, opt_metadata = await self.self_improvement_manager.predict_and_optimize_response(
+                        message, base_response
+                    )
+                    response = optimized_response
+                else:
+                    response = base_response
+                
+                # Store the interaction in long-term memory
+                if use_memory:
+                    await self.memory_manager.store_conversation_memory(
+                        user_input=message,
+                        ai_response=response,
+                        importance=0.6  # Moderate importance for conversation history
+                    )
+                
+                # Learn from interaction if enabled
+                if learn_from_interaction and hasattr(self, 'self_improvement_manager'):
+                    total_time = time.time() - start_time
+                    await self.self_improvement_manager.process_interaction(
+                        message, response, response_time=total_time
+                    )
+                
+                # Capture performance metrics
+                generation_time = time.time() - start_time
+                tokens_processed = len(response.split())
+                
+                await self.performance_monitor.capture_metrics(
+                    tokens_processed=tokens_processed,
+                    generation_time=generation_time,
+                    model_size=self.config.llm.model_size,
+                    thread_count=self.config.llm.threads
+                )
+                
                 return response
             else:
                 raise RuntimeError("LLM engine not initialized")
 
         except Exception as e:
             logger.error(f"Error processing query: {e}")
+            
+            # Even if there's an error, we can still learn from it
+            if learn_from_interaction and hasattr(self, 'self_improvement_manager'):
+                total_time = time.time() - start_time
+                await self.self_improvement_manager.process_interaction(
+                    message, f"Error occurred: {str(e)}", user_feedback="error", response_time=total_time
+                )
+            
             raise
+
+    def _contains_tool_syntax(self, text: str) -> bool:
+        """Check if text contains potential tool calls"""
+        # Look for patterns that might indicate tool usage
+        import re
+        patterns = [
+            r'\[\[.*?:.*?\]\]',  # Tool call syntax: [[tool_name: args]]
+            r'calculate|compute|math',  # Calculator tool
+            r'read file|open file|show content',  # File reader tool
+            r'search web|find information|lookup',  # Web search tool
+            r'time|date|current',  # Datetime tool
+        ]
+        
+        text_lower = text.lower()
+        return any(re.search(pattern, text_lower) for pattern in patterns)
 
     async def process_audio(
         self,
