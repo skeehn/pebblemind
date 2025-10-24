@@ -35,7 +35,7 @@ jobs:
         run: black --check pebblemind/ tests/
 
       - name: Run isort (import sorting check)
-        run: isort --check-only pebblemind/ tests/
+        run: isort --profile black --check-only pebblemind/ tests/
 
       - name: Run flake8 (linting)
         run: flake8 pebblemind/ tests/ --max-line-length=120 --extend-ignore=E203,W503
