@@ -4,6 +4,7 @@ import asyncio
 import logging
 import sqlite3
 import hashlib
+import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import numpy as np
@@ -198,7 +199,7 @@ class RAGSystem:
                         cursor.execute("""
                             INSERT OR REPLACE INTO documents (id, content, metadata, embedding)
                             VALUES (?, ?, ?, ?)
-                        """, (doc_id, chunk, str(metadata), embedding.tobytes()))
+                        """, (doc_id, chunk, json.dumps(metadata), embedding.tobytes()))
 
                         cursor.execute("""
                             INSERT OR REPLACE INTO documents_vec (id, embedding)
@@ -209,7 +210,7 @@ class RAGSystem:
                         cursor.execute("""
                             INSERT OR REPLACE INTO documents (id, content, metadata, embedding)
                             VALUES (?, ?, ?, ?)
-                        """, (doc_id, chunk, str(metadata), embedding.tobytes()))
+                        """, (doc_id, chunk, json.dumps(metadata), embedding.tobytes()))
 
             conn.commit()
             conn.close()
@@ -250,7 +251,7 @@ class RAGSystem:
                     results.append({
                         "id": doc_id,
                         "content": content,
-                        "metadata": eval(metadata) if metadata else {},
+                        "metadata": json.loads(metadata) if metadata else {},
                         "score": 1.0 - distance,  # Convert distance to similarity score
                     })
             else:
@@ -269,7 +270,7 @@ class RAGSystem:
                     results.append({
                         "id": doc_id,
                         "content": content,
-                        "metadata": eval(metadata) if metadata else {},
+                        "metadata": json.loads(metadata) if metadata else {},
                         "score": 0.5,  # Default score for fallback
                     })
 

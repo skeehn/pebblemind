@@ -78,17 +78,58 @@ class ToolManager:
     # Default tools implementation
     async def _calculator_tool(self, expression: str) -> str:
         """Safely evaluate mathematical expressions"""
-        # Only allow safe mathematical operations
-        allowed_chars = set('0123456789+-*/().% ')
-        if not all(c in allowed_chars for c in expression):
-            raise ValueError("Invalid characters in expression")
-        
+        import ast
+        import operator
+
+        # Define safe operators
+        safe_operators = {
+            ast.Add: operator.add,
+            ast.Sub: operator.sub,
+            ast.Mult: operator.mul,
+            ast.Div: operator.truediv,
+            ast.FloorDiv: operator.floordiv,
+            ast.Mod: operator.mod,
+            ast.Pow: operator.pow,
+            ast.USub: operator.neg,
+            ast.UAdd: operator.pos,
+        }
+
+        def safe_eval(node):
+            """Safely evaluate an AST node"""
+            if isinstance(node, ast.Num):  # Python 3.7 and older
+                return node.n
+            elif isinstance(node, ast.Constant):  # Python 3.8+
+                if isinstance(node.value, (int, float)):
+                    return node.value
+                raise ValueError(f"Unsupported constant type: {type(node.value)}")
+            elif isinstance(node, ast.BinOp):
+                left = safe_eval(node.left)
+                right = safe_eval(node.right)
+                op = safe_operators.get(type(node.op))
+                if op is None:
+                    raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+                return op(left, right)
+            elif isinstance(node, ast.UnaryOp):
+                operand = safe_eval(node.operand)
+                op = safe_operators.get(type(node.op))
+                if op is None:
+                    raise ValueError(f"Unsupported unary operator: {type(node.op).__name__}")
+                return op(operand)
+            elif isinstance(node, ast.Expression):
+                return safe_eval(node.body)
+            else:
+                raise ValueError(f"Unsupported expression type: {type(node).__name__}")
+
         try:
-            # Use eval safely by restricting to mathematical operations
-            result = eval(expression, {"__builtins__": {}}, {})
+            # Parse the expression into an AST
+            tree = ast.parse(expression, mode='eval')
+            # Safely evaluate the AST
+            result = safe_eval(tree)
             return f"Result: {result}"
-        except Exception as e:
+        except (SyntaxError, ValueError) as e:
             raise ValueError(f"Calculation error: {e}")
+        except Exception as e:
+            raise ValueError(f"Unexpected error in calculation: {e}")
     
     async def _web_search_tool(self, query: str, num_results: int = 3) -> List[Dict[str, str]]:
         """Perform a web search (using a safe search API)"""
@@ -144,40 +185,77 @@ class ToolManager:
             raise ValueError(f"Error reading file: {e}")
     
     async def _code_executor_tool(self, language: str, code: str) -> str:
-        """Execute code in a safe environment"""
+        """Execute code in a safe environment (RESTRICTED)"""
         if language.lower() != "python":
             raise ValueError("Only Python code execution is supported")
-        
-        # Safety: Only allow specific safe operations
+
+        # Enhanced safety: More comprehensive unsafe pattern detection
         unsafe_patterns = [
             'import os', 'import sys', 'import subprocess', 'import shutil',
+            'import socket', 'import requests', 'import urllib', 'import http',
             'open(', 'exec(', 'eval(', 'compile(', '__import__',
-            'file', 'input', 'raw_input'
+            'file', 'input', 'raw_input', 'globals(', 'locals(',
+            'vars(', 'dir(', 'getattr', 'setattr', 'delattr',
+            'hasattr', '__builtins__', '__dict__', '__class__',
+            '__bases__', '__subclasses__', '__code__', '__globals__',
+            'lambda', 'yield', 'async', 'await'
         ]
-        
+
         code_lower = code.lower()
         for pattern in unsafe_patterns:
             if pattern in code_lower:
-                raise ValueError(f"Potentially unsafe code detected: {pattern}")
-        
-        # Create a safe execution environment
+                raise ValueError(f"Potentially unsafe code detected: '{pattern}' is not allowed")
+
+        # Check for any import statements
+        if 'import ' in code_lower or 'from ' in code_lower:
+            raise ValueError("Import statements are not allowed in safe execution mode")
+
+        # Limit code length
+        if len(code) > 1000:
+            raise ValueError("Code too long (max 1000 characters)")
+
+        # Create a safe execution environment with very limited builtins
+        output_buffer = []
+
+        def safe_print(*args, **kwargs):
+            """Capture print output"""
+            output_buffer.append(' '.join(map(str, args)))
+
         safe_globals = {
             "__builtins__": {
-                'len': len, 'str': str, 'int': int, 'float': float,
+                'len': len, 'str': str, 'int': int, 'float': float, 'bool': bool,
                 'list': list, 'dict': dict, 'tuple': tuple, 'set': set,
                 'min': min, 'max': max, 'sum': sum, 'abs': abs,
                 'round': round, 'range': range, 'enumerate': enumerate,
                 'zip': zip, 'map': map, 'filter': filter, 'sorted': sorted,
-                'print': lambda *args: f"Output: {' '.join(map(str, args))}"
+                'reversed': reversed, 'all': all, 'any': any,
+                'print': safe_print,
+                'True': True, 'False': False, 'None': None
             }
         }
-        
+
         try:
             # Execute in a restricted environment
-            exec_result = exec(code, safe_globals, {})
-            return "Code executed successfully"
+            local_scope = {}
+            exec(code, safe_globals, local_scope)
+
+            # Prepare result
+            result_parts = []
+            if output_buffer:
+                result_parts.append("Output: " + '\n'.join(output_buffer))
+
+            # Show any variables that were created (excluding private ones)
+            variables = {k: v for k, v in local_scope.items() if not k.startswith('_')}
+            if variables:
+                result_parts.append("Variables: " + str(variables))
+
+            if result_parts:
+                return '\n'.join(result_parts)
+            else:
+                return "Code executed successfully (no output)"
+
         except Exception as e:
-            return f"Execution error: {e}"
+            return f"Execution error: {type(e).__name__}: {e}"
     
     async def _wikipedia_tool(self, query: str, sentences: int = 3) -> str:
         """Get information from Wikipedia"""

@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  pebblemind:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pebblemind:latest
+    container_name: pebblemind
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"  # API server
+
+    volumes:
+      # Persist data
+      - ./data:/app/data
+      # Persist models (download once, reuse)
+      - ./models:/app/models
+      # Persist cache
+      - pebblemind-cache:/app/cache
+
+    environment:
+      # LLM Configuration
+      - LLM_MODEL_PATH=/app/models/qwen2.5-3b-instruct-q4_k_m.gguf
+      - LLM_MODEL_SIZE=3b
+      - LLM_CONTEXT_LENGTH=2048
+      - LLM_MAX_TOKENS=256
+      - LLM_TEMPERATURE=0.7
+      - LLM_ENABLE_BLAS=true
+      - LLM_THREADS=4
+
+      # RAG Configuration
+      - RAG_VECTOR_DB_PATH=/app/data/vectors.db
+      - RAG_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+
+      # Memory Configuration
+      - MEMORY_DB_PATH=/app/data/longterm_memory.db
+
+      # API Configuration
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_CORS_ORIGINS=*
+
+      # Performance
+      - OMP_NUM_THREADS=4
+      - OPENBLAS_NUM_THREADS=4
+
+    # Resource limits (adjust based on your hardware)
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pebblemind-cache:
+    driver: local
+
+networks:
+  default:
+    name: pebblemind-network

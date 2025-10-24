@@ -22,19 +22,28 @@ logger = logging.getLogger(__name__)
 
 # OpenAI-compatible data models
 class ChatMessage(BaseModel):
-    role: str = Field(..., description="Role of the message author")
-    content: str = Field(..., description="Content of the message")
+    role: str = Field(..., description="Role of the message author", pattern="^(system|user|assistant)$")
+    content: str = Field(..., description="Content of the message", min_length=1, max_length=50000)
+
+    @property
+    def is_valid_role(self) -> bool:
+        """Check if role is valid"""
+        return self.role in {"system", "user", "assistant"}
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = Field(..., description="Model to use for completion")
-    messages: List[ChatMessage] = Field(..., description="List of messages")
-    max_tokens: Optional[int] = Field(None, description="Maximum tokens to generate")
-    temperature: Optional[float] = Field(0.7, description="Sampling temperature")
-    top_p: Optional[float] = Field(0.9, description="Top-p sampling")
-    top_k: Optional[int] = Field(40, description="Top-k sampling")
+    model: str = Field(..., description="Model to use for completion", min_length=1, max_length=100)
+    messages: List[ChatMessage] = Field(..., description="List of messages", min_items=1, max_items=100)
+    max_tokens: Optional[int] = Field(None, description="Maximum tokens to generate", ge=1, le=8192)
+    temperature: Optional[float] = Field(0.7, description="Sampling temperature", ge=0.0, le=2.0)
+    top_p: Optional[float] = Field(0.9, description="Top-p sampling", ge=0.0, le=1.0)
+    top_k: Optional[int] = Field(40, description="Top-k sampling", ge=1, le=100)
     stream: Optional[bool] = Field(False, description="Stream the response")
-    stop: Optional[List[str]] = Field(None, description="Stop sequences")
+    stop: Optional[List[str]] = Field(None, description="Stop sequences", max_items=10)
+
+    class Config:
+        """Pydantic config"""
+        str_strip_whitespace = True  # Auto-strip whitespace from strings
 
 
 class ChatCompletionChoice(BaseModel):
@@ -68,6 +77,21 @@ class ModelInfo(BaseModel):
 class ModelList(BaseModel):
     object: str = "list"
     data: List[ModelInfo]
+
+
+class SpeechRequest(BaseModel):
+    """Request model for text-to-speech"""
+    input: str = Field(..., description="Text to convert to speech", min_length=1, max_length=10000)
+    model: str = Field(default="tts-1", description="TTS model to use", pattern="^tts-[0-9]+$")
+    voice: str = Field(default="alloy", description="Voice to use")
+
+    class Config:
+        str_strip_whitespace = True
+
+
+class TranscriptionResponse(BaseModel):
+    """Response model for speech-to-text"""
+    text: str = Field(..., description="Transcribed text")
 
 
 class APIServer:
@@ -202,7 +226,7 @@ class APIServer:
                 logger.error(f"Chat completion failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/v1/audio/transcriptions")
+        @self.app.post("/v1/audio/transcriptions", response_model=TranscriptionResponse)
         async def create_transcription(request: Request):
             """Transcribe audio to text (OpenAI-compatible)"""
             try:
@@ -214,35 +238,34 @@ class APIServer:
                 if not audio_file:
                     raise HTTPException(status_code=400, detail="No audio file provided")
 
-                # Read audio data
+                # Read audio data with size limit (25MB max)
+                MAX_AUDIO_SIZE = 25 * 1024 * 1024  # 25MB
                 audio_data = await audio_file.read()
+
+                if len(audio_data) > MAX_AUDIO_SIZE:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE / (1024*1024):.0f}MB"
+                    )
+
+                if len(audio_data) == 0:
+                    raise HTTPException(status_code=400, detail="Empty audio file")
 
                 # Process with voice processor
                 transcription = await self.pebblemind.voice_processor.speech_to_text(audio_data)
 
-                return {
-                    "text": transcription
-                }
+                return TranscriptionResponse(text=transcription)
 
             except Exception as e:
                 logger.error(f"Transcription failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.post("/v1/audio/speech")
-        async def create_speech(request: Request):
+        async def create_speech(speech_request: SpeechRequest):
             """Generate speech from text (OpenAI-compatible)"""
             try:
-                # Parse request body
-                body = await request.json()
-                text = body.get("input", "")
-                model = body.get("model", "tts-1")
-                voice = body.get("voice", "alloy")
-
-                if not text:
-                    raise HTTPException(status_code=400, detail="No text provided")
-
                 # Generate speech
-                audio_data = await self.pebblemind.voice_processor.text_to_speech(text)
+                audio_data = await self.pebblemind.voice_processor.text_to_speech(speech_request.input)
 
                 # Return audio data
                 from fastapi.responses import Response
