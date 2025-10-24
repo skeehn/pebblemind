@@ -23,9 +23,9 @@ interface BackendStatus {
 }
 
 interface ChatResponse {
-  content: string;
-  role: string;
+  response: string;
   model: string;
+  tokens?: number;
 }
 
 class PebbleMindDesktopApp {
@@ -209,7 +209,7 @@ class PebbleMindDesktopApp {
     this.updateConnectionStatus('connecting', `Switching to ${modelSize.toUpperCase()} model...`);
 
     try {
-      await invoke('switch_model', { model: modelSize });
+      await invoke('switch_model', { modelSize: modelSize });
 
       this.updateConnectionStatus('connected', `${modelSize.toUpperCase()} model active`);
 
@@ -305,13 +305,11 @@ class PebbleMindDesktopApp {
       // Note: For now using non-streaming. Streaming would require WebSocket or event-based approach
       const response = await invoke<ChatResponse>('send_chat_message', {
         message: message,
-        systemPrompt: null,
-        maxTokens: 512,
-        temperature: 0.7
+        systemPrompt: null
       });
 
       // Simulate streaming effect for better UX
-      const words = response.content.split(' ');
+      const words = response.response.split(' ');
       for (let i = 0; i < words.length; i++) {
         assistantMessage.content += (i > 0 ? ' ' : '') + words[i];
         contentElement.textContent = assistantMessage.content;
@@ -328,19 +326,6 @@ class PebbleMindDesktopApp {
       assistantMessage.content = `Sorry, I encountered an error: ${error}. Please make sure the PebbleMind backend is running properly.`;
       contentElement.textContent = assistantMessage.content;
     }
-  }
-
-  private generateDemoResponse(message: string): string {
-    // Demo responses for when API is not available
-    const responses = [
-      `I understand you're asking about "${message}". This is a demo response since the PebbleMind API server is not running. To get real responses, please start the PebbleMind server with: pebblemind serve`,
-      
-      `Thank you for your message: "${message}". PebbleMind is designed to provide intelligent responses using local AI models. Start the API server to experience real-time AI conversation.`,
-      
-      `Your query "${message}" would normally be processed by one of our Qwen2.5 models (1.5B, 3B, or 7B). Please run 'pebblemind serve' in your terminal to enable full functionality.`
-    ];
-    
-    return responses[Math.floor(Math.random() * responses.length)];
   }
 
   private addMessage(message: Message): HTMLElement {
