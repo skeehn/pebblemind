@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class LLMConfig(BaseModel):
     """Configuration for LLM inference optimized for lightweight devices"""
+    backend: str = Field(default="local", description="Backend type: 'local' (llama.cpp) or 'groq' (cloud API)")
     model_path: str = Field(default="", description="Path to the LLM model file (auto-detected if empty)")
     model_name: str = Field(default="Qwen2.5-1.5B-Instruct", description="Model name")
     model_size: str = Field(default="1.5b", description="Model size: 1.5b (ultra-light, MacBook Air optimized), 3b (balanced), 7b (high-quality)")
@@ -25,6 +26,14 @@ class LLMConfig(BaseModel):
     enable_gpu_offload: bool = Field(default=False, description="Enable GPU layer offloading (CPU-only by default for consistency)")
     gpu_layers: int = Field(default=0, description="Number of layers to offload to GPU (-1 for auto)")
     auto_detect_gpu: bool = Field(default=True, description="Automatically detect and configure GPU")
+
+
+class GroqConfig(BaseModel):
+    """Configuration for Groq cloud API backend"""
+    api_key: Optional[str] = Field(default=None, description="Groq API key (or set GROQ_API_KEY env var)")
+    model: str = Field(default="llama-3.1-70b-versatile", description="Groq model to use")
+    base_url: str = Field(default="https://api.groq.com/openai/v1", description="Groq API base URL")
+    timeout: float = Field(default=30.0, description="Request timeout in seconds")
 
 
 class VoiceConfig(BaseModel):
@@ -67,6 +76,7 @@ class DesktopConfig(BaseModel):
 class Config(BaseModel):
     """Main configuration class"""
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    groq: GroqConfig = Field(default_factory=GroqConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     rag: RAGConfig = Field(default_factory=RAGConfig)
     api: APIConfig = Field(default_factory=APIConfig)
