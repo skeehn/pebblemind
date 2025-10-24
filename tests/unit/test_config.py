@@ -4,9 +4,17 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from pebblemind.config import (APIConfig, LLMConfig, MemoryConfig,
-                               PebbleMindConfig, RAGConfig, ToolsConfig,
-                               VoiceConfig, load_config, save_config)
+from pebblemind.config import (
+    APIConfig,
+    LLMConfig,
+    MemoryConfig,
+    PebbleMindConfig,
+    RAGConfig,
+    ToolsConfig,
+    VoiceConfig,
+    load_config,
+    save_config,
+)
 
 
 @pytest.mark.unit
