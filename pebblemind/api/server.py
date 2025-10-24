@@ -8,8 +8,7 @@ from datetime import datetime
 from typing import List, Optional
 
 import uvicorn
-from fastapi import (FastAPI, HTTPException, Request, WebSocket,
-                     WebSocketDisconnect)
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field

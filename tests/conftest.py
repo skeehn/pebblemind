@@ -10,9 +10,15 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 # Import PebbleMind components
-from pebblemind.config import (APIConfig, LLMConfig, MemoryConfig,
-                               PebbleMindConfig, RAGConfig, ToolsConfig,
-                               VoiceConfig)
+from pebblemind.config import (
+    APIConfig,
+    LLMConfig,
+    MemoryConfig,
+    PebbleMindConfig,
+    RAGConfig,
+    ToolsConfig,
+    VoiceConfig,
+)
 
 
 @pytest.fixture(scope="session")

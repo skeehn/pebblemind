@@ -16,8 +16,7 @@ from .rag import RAGSystem
 from .reasoning_enhancer import ReasoningEnhancer
 from .software_30 import SelfImprovementManager
 from .specialized_agents import AgentOrchestrator
-from .system_improvements import (ComponentOrchestrator,
-                                  SystemImprovementManager)
+from .system_improvements import ComponentOrchestrator, SystemImprovementManager
 from .tool_integration import FunctionCallingManager, ToolManager
 from .voice import VoiceProcessor
 
