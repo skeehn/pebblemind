@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -11,7 +13,19 @@ interface PebbleMindClient {
   isConnected: boolean;
   isLoading: boolean;
   currentModel: string;
-  apiBaseUrl: string;
+  backendStarted: boolean;
+}
+
+interface BackendStatus {
+  running: boolean;
+  port: number;
+  message: string;
+}
+
+interface ChatResponse {
+  content: string;
+  role: string;
+  model: string;
 }
 
 class PebbleMindDesktopApp {
@@ -33,7 +47,7 @@ class PebbleMindDesktopApp {
       isConnected: false,
       isLoading: false,
       currentModel: '3b',
-      apiBaseUrl: 'http://localhost:8000'
+      backendStarted: false
     };
 
     this.elements = {
@@ -49,7 +63,7 @@ class PebbleMindDesktopApp {
 
     this.initializeElements();
     this.setupEventListeners();
-    this.checkConnection();
+    this.startBackend();
   }
 
   private initializeElements(): void {
@@ -96,38 +110,64 @@ class PebbleMindDesktopApp {
     });
   }
 
-  private async checkConnection(): Promise<void> {
-    this.updateConnectionStatus('connecting', 'Connecting...');
-    
+  private async startBackend(): Promise<void> {
+    this.updateConnectionStatus('connecting', 'Starting PebbleMind backend...');
+
     try {
-      const response = await fetch(`${this.client.apiBaseUrl}/health`);
-      if (response.ok) {
+      const status = await invoke<BackendStatus>('start_backend');
+
+      if (status.running) {
+        this.client.backendStarted = true;
+        this.client.isConnected = true;
+        this.updateConnectionStatus('connected', 'Backend ready');
+
+        // Check available models
+        await this.checkModelStatus();
+      } else {
+        throw new Error(status.message || 'Failed to start backend');
+      }
+    } catch (error) {
+      console.error('Failed to start backend:', error);
+      this.updateConnectionStatus('disconnected', 'Backend failed to start - Click to retry');
+      this.showConnectionError();
+
+      // Retry after 5 seconds
+      setTimeout(() => this.startBackend(), 5000);
+    }
+  }
+
+  private async checkConnection(): Promise<void> {
+    this.updateConnectionStatus('connecting', 'Checking backend status...');
+
+    try {
+      const status = await invoke<BackendStatus>('get_backend_status');
+
+      if (status.running) {
         this.client.isConnected = true;
         this.updateConnectionStatus('connected', 'Connected');
-        
+
         // Check model status
         await this.checkModelStatus();
       } else {
-        throw new Error('API not responding');
+        throw new Error('Backend not running');
       }
     } catch (error) {
       this.client.isConnected = false;
       this.updateConnectionStatus('disconnected', 'Disconnected - Click to retry');
       console.error('Connection failed:', error);
-      
+
       // Show connection error
       this.showConnectionError();
-      
-      // Retry after 5 seconds
-      setTimeout(() => this.checkConnection(), 5000);
+
+      // Try to restart backend
+      setTimeout(() => this.startBackend(), 5000);
     }
   }
 
   private async checkModelStatus(): Promise<void> {
     try {
-      // This would call a PebbleMind status endpoint
-      // For now, we'll simulate this
-      console.log('Checking model status...');
+      const models = await invoke<any[]>('list_available_models');
+      console.log('Available models:', models);
     } catch (error) {
       console.error('Failed to check model status:', error);
     }
@@ -150,8 +190,8 @@ class PebbleMindDesktopApp {
     errorElement.innerHTML = `
       <div style="color: var(--error-color);">⚠️</div>
       <div>
-        <strong>Unable to connect to PebbleMind API</strong><br>
-        <small>Make sure the PebbleMind server is running on ${this.client.apiBaseUrl}</small>
+        <strong>Unable to start PebbleMind backend</strong><br>
+        <small>Make sure PebbleMind is properly installed and accessible in your PATH</small>
       </div>
     `;
 
@@ -164,16 +204,15 @@ class PebbleMindDesktopApp {
       return;
     }
 
+    const oldModel = this.client.currentModel;
     this.client.currentModel = modelSize;
     this.updateConnectionStatus('connecting', `Switching to ${modelSize.toUpperCase()} model...`);
-    
+
     try {
-      // This would call the PebbleMind model switch API
-      // For demo purposes, we'll simulate this
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      await invoke('switch_model', { model: modelSize });
+
       this.updateConnectionStatus('connected', `${modelSize.toUpperCase()} model active`);
-      
+
       // Add system message
       this.addMessage({
         id: Date.now().toString(),
@@ -181,14 +220,15 @@ class PebbleMindDesktopApp {
         content: `Switched to ${modelSize.toUpperCase()} model. ${this.getModelDescription(modelSize)}`,
         timestamp: new Date()
       });
-      
+
     } catch (error) {
       this.updateConnectionStatus('connected', 'Connected');
       console.error('Model switch failed:', error);
-      
-      // Reset selector
+
+      // Reset to old model
+      this.client.currentModel = oldModel;
       if (this.elements.modelSelector) {
-        this.elements.modelSelector.value = this.client.currentModel;
+        this.elements.modelSelector.value = oldModel;
       }
     }
   }
@@ -248,107 +288,45 @@ class PebbleMindDesktopApp {
   }
 
   private async sendStreamingRequest(message: string): Promise<void> {
-    // Create assistant message for streaming
+    // Create assistant message
     const assistantMessage: Message = {
       id: Date.now().toString(),
       role: 'assistant',
       content: '',
       timestamp: new Date(),
-      streaming: true
+      streaming: false
     };
 
     const messageElement = this.addMessage(assistantMessage);
     const contentElement = messageElement.querySelector('.message-content') as HTMLElement;
 
     try {
-      const response = await fetch(`${this.client.apiBaseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'pebblemind-chat',
-          messages: [
-            { role: 'user', content: message }
-          ],
-          stream: true,
-          temperature: 0.7
-        })
+      // Use Tauri command to send chat message
+      // Note: For now using non-streaming. Streaming would require WebSocket or event-based approach
+      const response = await invoke<ChatResponse>('send_chat_message', {
+        message: message,
+        systemPrompt: null,
+        maxTokens: 512,
+        temperature: 0.7
       });
 
-      if (!response.ok) {
-        throw new Error(`API responded with status ${response.status}`);
+      // Simulate streaming effect for better UX
+      const words = response.content.split(' ');
+      for (let i = 0; i < words.length; i++) {
+        assistantMessage.content += (i > 0 ? ' ' : '') + words[i];
+        contentElement.textContent = assistantMessage.content;
+        this.scrollToBottom();
+
+        // Small delay between words for streaming effect
+        await new Promise(resolve => setTimeout(resolve, 30));
       }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error('No response stream available');
-      }
-
-      let buffer = '';
-      
-      while (true) {
-        const { done, value } = await reader.read();
-        
-        if (done) break;
-        
-        buffer += decoder.decode(value, { stream: true });
-        
-        // Process complete lines
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            
-            if (data === '[DONE]') {
-              break;
-            }
-            
-            try {
-              const json = JSON.parse(data);
-              const delta = json.choices?.[0]?.delta?.content;
-              
-              if (delta) {
-                assistantMessage.content += delta;
-                contentElement.textContent = assistantMessage.content;
-                this.scrollToBottom();
-              }
-            } catch (e) {
-              // Ignore JSON parse errors for malformed chunks
-              console.warn('Failed to parse streaming chunk:', data);
-            }
-          }
-        }
-      }
-      
-      // Finalize message
-      assistantMessage.streaming = false;
-      messageElement.classList.remove('streaming');
-      
-      // Remove streaming cursor
-      const cursor = messageElement.querySelector('.streaming-cursor');
-      if (cursor) {
-        cursor.remove();
-      }
-      
     } catch (error) {
-      console.error('Streaming request failed:', error);
-      
-      // Fallback to non-streaming for demo
-      assistantMessage.content = this.generateDemoResponse(message);
-      assistantMessage.streaming = false;
-      messageElement.classList.remove('streaming');
+      console.error('Chat request failed:', error);
+
+      // Show error message
+      assistantMessage.content = `Sorry, I encountered an error: ${error}. Please make sure the PebbleMind backend is running properly.`;
       contentElement.textContent = assistantMessage.content;
-      
-      // Remove streaming cursor
-      const cursor = messageElement.querySelector('.streaming-cursor');
-      if (cursor) {
-        cursor.remove();
-      }
     }
   }
 
