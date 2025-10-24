@@ -1,12 +1,12 @@
 """RAG System using BGE-small embeddings and sqlite-vec"""
 
-import asyncio
-import logging
-import sqlite3
 import hashlib
 import json
-from typing import List, Dict, Any, Optional
+import logging
+import sqlite3
 from pathlib import Path
+from typing import Any, Dict, List
+
 import numpy as np
 
 try:
@@ -31,10 +31,13 @@ class RAGSystem:
 
         # Verify sqlite-vec is available
         try:
-            import sqlite_vec
+            pass
+
             self.sqlite_vec_available = True
         except ImportError:
-            logger.warning("sqlite-vec not available. Install it for vector search capabilities.")
+            logger.warning(
+                "sqlite-vec not available. Install it for vector search capabilities."
+            )
             self.sqlite_vec_available = False
 
     async def initialize(self) -> None:
@@ -61,7 +64,9 @@ class RAGSystem:
     async def _setup_embedding_model(self) -> None:
         """Setup BGE-small embedding model"""
         if SentenceTransformer is None:
-            raise ImportError("sentence-transformers not installed. Install with: pip install sentence-transformers")
+            raise ImportError(
+                "sentence-transformers not installed. Install with: pip install sentence-transformers"
+            )
 
         try:
             logger.info(f"Loading embedding model: {self.config.embedding_model}")
@@ -70,7 +75,7 @@ class RAGSystem:
             self.embedding_model = SentenceTransformer(
                 self.config.embedding_model,
                 device="cpu",  # Force CPU usage for consistency
-                cache_folder="./cache/embeddings"
+                cache_folder="./cache/embeddings",
             )
 
             # Verify embedding dimension
@@ -78,10 +83,14 @@ class RAGSystem:
             actual_dim = test_embedding.shape[1]
 
             if actual_dim != self.config.embedding_dim:
-                logger.warning(f"Embedding dimension mismatch. Expected {self.config.embedding_dim}, got {actual_dim}")
+                logger.warning(
+                    f"Embedding dimension mismatch. Expected {self.config.embedding_dim}, got {actual_dim}"
+                )
                 self.config.embedding_dim = actual_dim
 
-            logger.info(f"Embedding model loaded with dimension: {self.config.embedding_dim}")
+            logger.info(
+                f"Embedding model loaded with dimension: {self.config.embedding_dim}"
+            )
 
         except Exception as e:
             logger.error(f"Failed to load embedding model: {e}")
@@ -101,36 +110,43 @@ class RAGSystem:
             if self.sqlite_vec_available:
                 conn.enable_load_extension(True)
                 import sqlite_vec
+
                 sqlite_vec.load(conn)
                 conn.enable_load_extension(False)
 
                 # Create vector table
-                cursor.execute(f"""
+                cursor.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS documents (
                         id TEXT PRIMARY KEY,
                         content TEXT NOT NULL,
                         metadata TEXT,
                         embedding BLOB
                     )
-                """)
+                """
+                )
 
                 # Create vector index
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     CREATE VIRTUAL TABLE IF NOT EXISTS documents_vec USING vec0(
                         id TEXT PRIMARY KEY,
                         embedding float[{self.config.embedding_dim}]
                     )
-                """)
+                """
+                )
             else:
                 # Fallback to regular table without vector search
-                cursor.execute("""
+                cursor.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS documents (
                         id TEXT PRIMARY KEY,
                         content TEXT NOT NULL,
                         metadata TEXT,
                         embedding BLOB
                     )
-                """)
+                """
+                )
 
             conn.commit()
             conn.close()
@@ -150,15 +166,21 @@ class RAGSystem:
         words = text.split()
         chunks = []
 
-        for i in range(0, len(words), self.config.chunk_size - self.config.chunk_overlap):
-            chunk = " ".join(words[i:i + self.config.chunk_size])
+        for i in range(
+            0, len(words), self.config.chunk_size - self.config.chunk_overlap
+        ):
+            chunk = " ".join(words[i : i + self.config.chunk_size])
             chunks.append(chunk)
 
             # Add overlap for next chunk
             if i + self.config.chunk_size < len(words):
-                overlap_start = max(0, i + self.config.chunk_size - self.config.chunk_overlap)
+                overlap_start = max(
+                    0, i + self.config.chunk_size - self.config.chunk_overlap
+                )
                 if overlap_start < len(words):
-                    overlap_chunk = " ".join(words[overlap_start:i + self.config.chunk_size])
+                    overlap_chunk = " ".join(
+                        words[overlap_start : i + self.config.chunk_size]
+                    )
                     if len(overlap_chunk.split()) >= self.config.chunk_overlap:
                         chunks.append(overlap_chunk)
 
@@ -196,21 +218,30 @@ class RAGSystem:
                     # Store in database
                     if self.sqlite_vec_available:
                         # Use vector extension
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT OR REPLACE INTO documents (id, content, metadata, embedding)
                             VALUES (?, ?, ?, ?)
-                        """, (doc_id, chunk, json.dumps(metadata), embedding.tobytes()))
+                        """,
+                            (doc_id, chunk, json.dumps(metadata), embedding.tobytes()),
+                        )
 
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT OR REPLACE INTO documents_vec (id, embedding)
                             VALUES (?, ?)
-                        """, (doc_id, embedding.astype(np.float32)))
+                        """,
+                            (doc_id, embedding.astype(np.float32)),
+                        )
                     else:
                         # Store embedding as blob
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT OR REPLACE INTO documents (id, content, metadata, embedding)
                             VALUES (?, ?, ?, ?)
-                        """, (doc_id, chunk, json.dumps(metadata), embedding.tobytes()))
+                        """,
+                            (doc_id, chunk, json.dumps(metadata), embedding.tobytes()),
+                        )
 
             conn.commit()
             conn.close()
@@ -237,42 +268,53 @@ class RAGSystem:
 
             if self.sqlite_vec_available:
                 # Use vector search
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT documents.id, documents.content, documents.metadata,
                            vec_distance_cosine(documents_vec.embedding, ?) as distance
                     FROM documents
                     JOIN documents_vec ON documents.id = documents_vec.id
                     ORDER BY distance
                     LIMIT ?
-                """, (query_embedding.astype(np.float32), k))
+                """,
+                    (query_embedding.astype(np.float32), k),
+                )
 
                 for row in cursor.fetchall():
                     doc_id, content, metadata, distance = row
-                    results.append({
-                        "id": doc_id,
-                        "content": content,
-                        "metadata": json.loads(metadata) if metadata else {},
-                        "score": 1.0 - distance,  # Convert distance to similarity score
-                    })
+                    results.append(
+                        {
+                            "id": doc_id,
+                            "content": content,
+                            "metadata": json.loads(metadata) if metadata else {},
+                            "score": 1.0
+                            - distance,  # Convert distance to similarity score
+                        }
+                    )
             else:
                 # Fallback to simple search (no vector similarity)
                 logger.warning("Vector search not available, using basic text search")
 
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT id, content, metadata
                     FROM documents
                     WHERE content LIKE ?
                     LIMIT ?
-                """, (f"%{query}%", k))
+                """,
+                    (f"%{query}%", k),
+                )
 
                 for row in cursor.fetchall():
                     doc_id, content, metadata = row
-                    results.append({
-                        "id": doc_id,
-                        "content": content,
-                        "metadata": json.loads(metadata) if metadata else {},
-                        "score": 0.5,  # Default score for fallback
-                    })
+                    results.append(
+                        {
+                            "id": doc_id,
+                            "content": content,
+                            "metadata": json.loads(metadata) if metadata else {},
+                            "score": 0.5,  # Default score for fallback
+                        }
+                    )
 
             conn.close()
             return results

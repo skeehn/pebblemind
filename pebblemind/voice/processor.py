@@ -2,12 +2,11 @@
 
 import asyncio
 import logging
-import io
-import subprocess
-import tempfile
 import os
-from typing import Optional, Dict, Any
+import tempfile
 from pathlib import Path
+from typing import Any, Dict, Optional
+
 import numpy as np
 import soundfile as sf
 
@@ -61,7 +60,9 @@ class VoiceProcessor:
             logger.info(f"Whisper.cpp ready at: {whisper_path}")
 
         except Exception as e:
-            logger.warning(f"Failed to setup whisper.cpp: {e}. STT will be unavailable.")
+            logger.warning(
+                f"Failed to setup whisper.cpp: {e}. STT will be unavailable."
+            )
             self._whisper_path = None
 
     async def _setup_piper(self) -> None:
@@ -126,10 +127,12 @@ class VoiceProcessor:
         # Clone whisper.cpp repository
         if not whisper_dir.exists():
             process = await asyncio.create_subprocess_exec(
-                "git", "clone", "https://github.com/ggerganov/whisper.cpp.git",
+                "git",
+                "clone",
+                "https://github.com/ggerganov/whisper.cpp.git",
                 str(whisper_dir),
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
             await process.communicate()
 
@@ -138,9 +141,11 @@ class VoiceProcessor:
 
         # Build whisper.cpp
         build_process = await asyncio.create_subprocess_exec(
-            "make", "-C", str(whisper_dir),
+            "make",
+            "-C",
+            str(whisper_dir),
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         await build_process.communicate()
 
@@ -165,6 +170,7 @@ class VoiceProcessor:
 
         # Download Piper binary (platform-specific)
         import platform
+
         system = platform.system().lower()
         machine = platform.machine().lower()
 
@@ -186,8 +192,8 @@ class VoiceProcessor:
             raise RuntimeError(f"Unsupported platform: {system}")
 
         # Download and extract Piper
-        import urllib.request
         import tarfile
+        import urllib.request
         import zipfile
 
         archive_path = piper_dir / "piper.tar.gz"
@@ -233,14 +239,19 @@ class VoiceProcessor:
                 # Run whisper.cpp for transcription
                 process = await asyncio.create_subprocess_exec(
                     self._whisper_path,
-                    "-m", f"models/ggml-{self.config.stt_model}.bin",
-                    "-f", temp_audio_path,
-                    "-t", str(self.config.stt_threads),
-                    "--language", "en",
-                    "--output-format", "txt",
+                    "-m",
+                    f"models/ggml-{self.config.stt_model}.bin",
+                    "-f",
+                    temp_audio_path,
+                    "-t",
+                    str(self.config.stt_threads),
+                    "--language",
+                    "en",
+                    "--output-format",
+                    "txt",
                     "--no-timestamps",
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.PIPE,
                 )
 
                 stdout, stderr = await process.communicate()
@@ -269,18 +280,22 @@ class VoiceProcessor:
 
         try:
             # Create temporary output file
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_output:
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav", delete=False
+            ) as temp_output:
                 temp_output_path = temp_output.name
 
             try:
                 # Run Piper TTS
                 process = await asyncio.create_subprocess_exec(
                     self._piper_path,
-                    "--model", f"models/piper/{self.config.tts_model}.onnx",
-                    "--output_file", temp_output_path,
+                    "--model",
+                    f"models/piper/{self.config.tts_model}.onnx",
+                    "--output_file",
+                    temp_output_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
-                    stdin=asyncio.subprocess.PIPE
+                    stdin=asyncio.subprocess.PIPE,
                 )
 
                 # Send text to Piper
@@ -312,5 +327,5 @@ class VoiceProcessor:
             "piper_available": self._piper_path is not None,
             "whisper_path": self._whisper_path,
             "piper_path": self._piper_path,
-            "config": self.config.model_dump()
+            "config": self.config.model_dump(),
         }

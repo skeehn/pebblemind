@@ -2,20 +2,11 @@
 
 import pytest
 import yaml
-from pathlib import Path
 from pydantic import ValidationError
 
-from pebblemind.config import (
-    LLMConfig,
-    RAGConfig,
-    VoiceConfig,
-    MemoryConfig,
-    ToolsConfig,
-    APIConfig,
-    PebbleMindConfig,
-    load_config,
-    save_config
-)
+from pebblemind.config import (APIConfig, LLMConfig, MemoryConfig,
+                               PebbleMindConfig, RAGConfig, ToolsConfig,
+                               VoiceConfig, load_config, save_config)
 
 
 @pytest.mark.unit
@@ -41,7 +32,7 @@ class TestLLMConfig:
             context_length=4096,
             temperature=0.9,
             enable_blas=False,
-            threads=8
+            threads=8,
         )
 
         assert config.model_size == "7b"
@@ -82,7 +73,7 @@ class TestRAGConfig:
             chunk_size=256,
             chunk_overlap=64,
             max_results=5,
-            embedding_dim=768
+            embedding_dim=768,
         )
 
         assert config.embedding_model == "custom/model"
@@ -111,7 +102,7 @@ class TestMemoryConfig:
         config = MemoryConfig(
             consolidation_period_days=14,
             forget_threshold_importance=0.5,
-            forget_threshold_age_days=60
+            forget_threshold_age_days=60,
         )
         assert config.consolidation_period_days == 14
 
@@ -135,7 +126,7 @@ class TestToolsConfig:
             enabled=True,
             allow_code_execution=False,
             allow_file_access=False,
-            web_search_enabled=False
+            web_search_enabled=False,
         )
 
         assert config.enabled is True
@@ -159,9 +150,7 @@ class TestAPIConfig:
     def test_api_config_custom_values(self):
         """Test API config with custom values"""
         config = APIConfig(
-            host="0.0.0.0",
-            port=9000,
-            cors_origins=["http://localhost:3000"]
+            host="0.0.0.0", port=9000, cors_origins=["http://localhost:3000"]
         )
 
         assert config.host == "0.0.0.0"
@@ -181,7 +170,7 @@ class TestPebbleMindConfig:
             voice=VoiceConfig(),
             memory=MemoryConfig(),
             tools=ToolsConfig(),
-            api=APIConfig()
+            api=APIConfig(),
         )
 
         assert config.llm.model_path == "models/test.gguf"
@@ -214,12 +203,10 @@ class TestConfigLoading:
         # Create config
         original_config = PebbleMindConfig(
             llm=LLMConfig(
-                model_path="models/test.gguf",
-                model_size="3b",
-                temperature=0.8
+                model_path="models/test.gguf", model_size="3b", temperature=0.8
             ),
             rag=RAGConfig(chunk_size=256),
-            tools=ToolsConfig(allow_code_execution=False)
+            tools=ToolsConfig(allow_code_execution=False),
         )
 
         # Save config
@@ -258,8 +245,7 @@ class TestConfigLoading:
         config_path = temp_dir / "test_config.yaml"
 
         config = PebbleMindConfig(
-            llm=LLMConfig(model_path="models/test.gguf"),
-            rag=RAGConfig()
+            llm=LLMConfig(model_path="models/test.gguf"), rag=RAGConfig()
         )
 
         save_config(config, config_path)

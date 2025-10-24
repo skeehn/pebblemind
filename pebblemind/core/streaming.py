@@ -37,9 +37,7 @@ async def sse_stream(
         final_data = {
             "object": "chat.completion.chunk",
             "model": model,
-            "choices": [
-                {"index": 0, "delta": {}, "finish_reason": "stop"}
-            ],
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
         }
         yield f"data: {json.dumps(final_data)}\n\n"
         yield "data: [DONE]\n\n"

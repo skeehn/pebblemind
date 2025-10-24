@@ -1,23 +1,18 @@
 """Pytest configuration and shared fixtures for PebbleMind tests"""
 
 import asyncio
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
-from typing import Generator, Dict, Any
+from typing import Any, Dict, Generator
+from unittest.mock import MagicMock, Mock
+
+import pytest
 
 # Import PebbleMind components
-from pebblemind.config import (
-    PebbleMindConfig,
-    LLMConfig,
-    RAGConfig,
-    VoiceConfig,
-    MemoryConfig,
-    ToolsConfig,
-    APIConfig
-)
+from pebblemind.config import (APIConfig, LLMConfig, MemoryConfig,
+                               PebbleMindConfig, RAGConfig, ToolsConfig,
+                               VoiceConfig)
 
 
 @pytest.fixture(scope="session")
@@ -51,7 +46,7 @@ def test_config(temp_dir: Path) -> PebbleMindConfig:
             enable_blas=False,  # Disable for tests
             enable_gpu_offload=False,
             gpu_layers=0,
-            threads=2
+            threads=2,
         ),
         rag=RAGConfig(
             embedding_model="BAAI/bge-small-en-v1.5",
@@ -59,31 +54,23 @@ def test_config(temp_dir: Path) -> PebbleMindConfig:
             chunk_size=128,
             chunk_overlap=16,
             max_results=3,
-            embedding_dim=384
+            embedding_dim=384,
         ),
-        voice=VoiceConfig(
-            stt_model="base.en",
-            tts_model="amy-low",
-            sample_rate=16000
-        ),
+        voice=VoiceConfig(stt_model="base.en", tts_model="amy-low", sample_rate=16000),
         memory=MemoryConfig(
             long_term_db_path=str(temp_dir / "test_memory.db"),
             consolidation_period_days=7,
             forget_threshold_importance=0.2,
             forget_threshold_age_days=30,
-            max_to_forget_per_session=10
+            max_to_forget_per_session=10,
         ),
         tools=ToolsConfig(
             enabled=True,
             allow_code_execution=False,  # Disable for safety in tests
             allow_file_access=True,
-            web_search_enabled=False  # Disable network calls in tests
+            web_search_enabled=False,  # Disable network calls in tests
         ),
-        api=APIConfig(
-            host="localhost",
-            port=8000,
-            cors_origins=["*"]
-        )
+        api=APIConfig(host="localhost", port=8000, cors_origins=["*"]),
     )
 
 
@@ -99,7 +86,7 @@ def llm_config(temp_dir: Path) -> LLMConfig:
         enable_blas=False,
         enable_gpu_offload=False,
         gpu_layers=0,
-        threads=2
+        threads=2,
     )
 
 
@@ -112,7 +99,7 @@ def rag_config(temp_dir: Path) -> RAGConfig:
         chunk_size=128,
         chunk_overlap=16,
         max_results=3,
-        embedding_dim=384
+        embedding_dim=384,
     )
 
 
@@ -124,7 +111,7 @@ def memory_config(temp_dir: Path) -> MemoryConfig:
         consolidation_period_days=7,
         forget_threshold_importance=0.2,
         forget_threshold_age_days=30,
-        max_to_forget_per_session=10
+        max_to_forget_per_session=10,
     )
 
 
@@ -133,7 +120,9 @@ def mock_llm():
     """Create a mock LLM for testing"""
     llm = MagicMock()
     llm.generate = Mock(return_value="Mock LLM response")
-    llm.generate_async = Mock(return_value=asyncio.coroutine(lambda: "Mock async response")())
+    llm.generate_async = Mock(
+        return_value=asyncio.coroutine(lambda: "Mock async response")()
+    )
     llm.stream_generate = Mock(return_value=iter(["Mock", " streaming", " response"]))
     return llm
 
@@ -155,16 +144,19 @@ def sample_documents() -> list[Dict[str, Any]]:
     return [
         {
             "content": "Python is a high-level programming language known for its simplicity and readability.",
-            "metadata": {"source": "test", "topic": "programming"}
+            "metadata": {"source": "test", "topic": "programming"},
         },
         {
             "content": "Machine learning is a subset of artificial intelligence that focuses on data and algorithms.",
-            "metadata": {"source": "test", "topic": "ai"}
+            "metadata": {"source": "test", "topic": "ai"},
         },
         {
-            "content": "The Transformer architecture revolutionized natural language processing with attention mechanisms.",
-            "metadata": {"source": "test", "topic": "nlp"}
-        }
+            "content": (
+                "The Transformer architecture revolutionized natural language processing "
+                "with attention mechanisms."
+            ),
+            "metadata": {"source": "test", "topic": "nlp"},
+        },
     ]
 
 
@@ -175,14 +167,14 @@ def sample_chat_messages() -> list[Dict[str, str]]:
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello, how are you?"},
         {"role": "assistant", "content": "I'm doing well, thank you!"},
-        {"role": "user", "content": "Can you help me with Python?"}
+        {"role": "user", "content": "Can you help me with Python?"},
     ]
 
 
 @pytest.fixture
 async def mock_api_client():
     """Create a mock API client for testing"""
-    from fastapi.testclient import TestClient
+
     # This will be used when we test the API
     # For now, return a mock
     return MagicMock()
@@ -199,7 +191,7 @@ def calculator_expressions() -> Dict[str, Any]:
             ("15 / 3", 5),
             ("2 ** 3", 8),
             ("(2 + 3) * 4", 20),
-            ("10 % 3", 1)
+            ("10 % 3", 1),
         ],
         "invalid": [
             "import os",
@@ -207,7 +199,7 @@ def calculator_expressions() -> Dict[str, Any]:
             "exec('print(1)')",
             "eval('1+1')",
             "2 + ; rm -rf /",  # Injection attempt
-        ]
+        ],
     }
 
 
@@ -218,14 +210,14 @@ def safe_code_samples() -> Dict[str, list[str]]:
         "safe": [
             "x = 2 + 2\nprint(x)",
             "numbers = [1, 2, 3, 4, 5]\nprint(sum(numbers))",
-            "result = max([10, 20, 30])\nprint(result)"
+            "result = max([10, 20, 30])\nprint(result)",
         ],
         "unsafe": [
             "import os\nos.system('ls')",
             "open('/etc/passwd', 'r').read()",
             "exec('malicious code')",
-            "__import__('subprocess').call(['ls'])"
-        ]
+            "__import__('subprocess').call(['ls'])",
+        ],
     }
 
 
@@ -233,8 +225,10 @@ def safe_code_samples() -> Dict[str, list[str]]:
 @pytest.fixture
 def async_test():
     """Decorator for async tests"""
+
     def decorator(func):
         return pytest.mark.asyncio(func)
+
     return decorator
 
 
@@ -256,10 +250,10 @@ def mock_sentence_transformers(monkeypatch):
 
     # Only mock if sentence_transformers is imported
     try:
-        import sentence_transformers
+        pass
+
         monkeypatch.setattr(
-            "sentence_transformers.SentenceTransformer",
-            MockSentenceTransformer
+            "sentence_transformers.SentenceTransformer", MockSentenceTransformer
         )
     except ImportError:
         pass

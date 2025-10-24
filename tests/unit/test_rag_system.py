@@ -1,13 +1,11 @@
 """Unit tests for RAG System"""
 
-import pytest
-import json
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import numpy as np
+import pytest
 
 from pebblemind.rag.system import RAGSystem
-from pebblemind.config import RAGConfig
 
 
 @pytest.mark.unit
@@ -22,7 +20,7 @@ class TestRAGSystem:
         assert rag.config == rag_config
 
         # Mock the embedding model
-        with patch('pebblemind.rag.system.SentenceTransformer') as mock_st:
+        with patch("pebblemind.rag.system.SentenceTransformer") as mock_st:
             mock_model = MagicMock()
             mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
             mock_st.return_value = mock_model
@@ -37,7 +35,7 @@ class TestRAGSystem:
         rag = RAGSystem(rag_config)
 
         # Mock the embedding model
-        with patch('pebblemind.rag.system.SentenceTransformer') as mock_st:
+        with patch("pebblemind.rag.system.SentenceTransformer") as mock_st:
             mock_model = MagicMock()
             mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
             mock_st.return_value = mock_model
@@ -46,10 +44,9 @@ class TestRAGSystem:
 
             # Add a document with metadata
             test_metadata = {"author": "test", "year": 2024}
-            documents = [{
-                "content": "Test content for metadata",
-                "metadata": test_metadata
-            }]
+            documents = [
+                {"content": "Test content for metadata", "metadata": test_metadata}
+            ]
 
             await rag.add_documents(documents)
 
@@ -69,7 +66,7 @@ class TestRAGSystem:
 
         rag = RAGSystem(rag_config)
 
-        with patch('pebblemind.rag.system.SentenceTransformer') as mock_st:
+        with patch("pebblemind.rag.system.SentenceTransformer") as mock_st:
             mock_model = MagicMock()
             mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
             mock_st.return_value = mock_model
@@ -84,17 +81,20 @@ class TestRAGSystem:
             malicious_metadata = "__import__('os').system('echo hacked')"
             embedding = np.random.rand(384).astype(np.float32)
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO documents (id, content, metadata, embedding)
                 VALUES (?, ?, ?, ?)
-            """, ("test_id", "test content", malicious_metadata, embedding.tobytes()))
+            """,
+                ("test_id", "test content", malicious_metadata, embedding.tobytes()),
+            )
 
             conn.commit()
             conn.close()
 
             # Try to search - should fail safely with json.loads
             with pytest.raises(Exception):  # json.JSONDecodeError
-                results = await rag.search("test", k=1)
+                await rag.search("test", k=1)
 
     @pytest.mark.asyncio
     async def test_document_chunking(self, rag_config):
@@ -116,7 +116,7 @@ class TestRAGSystem:
         """Test adding documents to RAG system"""
         rag = RAGSystem(rag_config)
 
-        with patch('pebblemind.rag.system.SentenceTransformer') as mock_st:
+        with patch("pebblemind.rag.system.SentenceTransformer") as mock_st:
             mock_model = MagicMock()
             mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
             mock_st.return_value = mock_model
@@ -133,7 +133,7 @@ class TestRAGSystem:
         """Test search functionality"""
         rag = RAGSystem(rag_config)
 
-        with patch('pebblemind.rag.system.SentenceTransformer') as mock_st:
+        with patch("pebblemind.rag.system.SentenceTransformer") as mock_st:
             mock_model = MagicMock()
             # Return consistent embeddings for reproducibility
             mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
@@ -159,7 +159,7 @@ class TestRAGSystem:
         """Test document deletion"""
         rag = RAGSystem(rag_config)
 
-        with patch('pebblemind.rag.system.SentenceTransformer') as mock_st:
+        with patch("pebblemind.rag.system.SentenceTransformer") as mock_st:
             mock_model = MagicMock()
             mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
             mock_st.return_value = mock_model
@@ -186,7 +186,7 @@ class TestRAGSystem:
         """Test getting database statistics"""
         rag = RAGSystem(rag_config)
 
-        with patch('pebblemind.rag.system.SentenceTransformer') as mock_st:
+        with patch("pebblemind.rag.system.SentenceTransformer") as mock_st:
             mock_model = MagicMock()
             mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
             mock_st.return_value = mock_model
@@ -208,7 +208,7 @@ class TestRAGSystem:
         """Test that empty documents are skipped"""
         rag = RAGSystem(rag_config)
 
-        with patch('pebblemind.rag.system.SentenceTransformer') as mock_st:
+        with patch("pebblemind.rag.system.SentenceTransformer") as mock_st:
             mock_model = MagicMock()
             mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
             mock_st.return_value = mock_model
@@ -219,7 +219,7 @@ class TestRAGSystem:
             documents = [
                 {"content": "", "metadata": {}},
                 {"content": "   ", "metadata": {}},
-                {"content": "Valid content", "metadata": {}}
+                {"content": "Valid content", "metadata": {}},
             ]
 
             await rag.add_documents(documents)
@@ -234,7 +234,7 @@ class TestRAGSystem:
         """Test cleanup functionality"""
         rag = RAGSystem(rag_config)
 
-        with patch('pebblemind.rag.system.SentenceTransformer') as mock_st:
+        with patch("pebblemind.rag.system.SentenceTransformer") as mock_st:
             mock_model = MagicMock()
             mock_model.encode.return_value = np.random.rand(1, 384).astype(np.float32)
             mock_st.return_value = mock_model

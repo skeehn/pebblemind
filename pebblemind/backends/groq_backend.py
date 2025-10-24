@@ -8,7 +8,8 @@ Uses Groq's ultra-fast inference API.
 import asyncio
 import logging
 import os
-from typing import Optional, AsyncIterator, Dict, Any
+from typing import Any, AsyncIterator, Dict, Optional
+
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ class GroqLLMBackend:
         self,
         api_key: Optional[str] = None,
         model: str = "llama-3.1-70b-versatile",
-        base_url: str = "https://api.groq.com/openai/v1"
+        base_url: str = "https://api.groq.com/openai/v1",
     ):
         """
         Initialize Groq LLM backend
@@ -43,9 +44,9 @@ class GroqLLMBackend:
         self.client = httpx.AsyncClient(
             headers={
                 "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             },
-            timeout=30.0
+            timeout=30.0,
         )
 
         logger.info(f"Initialized Groq backend with model: {model}")
@@ -57,7 +58,7 @@ class GroqLLMBackend:
         max_tokens: int = 256,
         temperature: float = 0.7,
         top_p: float = 0.9,
-        **kwargs
+        **kwargs,
     ) -> str:
         """
         Generate text using Groq API
@@ -87,8 +88,8 @@ class GroqLLMBackend:
                     "max_tokens": max_tokens,
                     "temperature": temperature,
                     "top_p": top_p,
-                    "stream": False
-                }
+                    "stream": False,
+                },
             )
             response.raise_for_status()
             data = response.json()
@@ -96,7 +97,9 @@ class GroqLLMBackend:
             return data["choices"][0]["message"]["content"]
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Groq API error: {e.response.status_code} - {e.response.text}")
+            logger.error(
+                f"Groq API error: {e.response.status_code} - {e.response.text}"
+            )
             raise RuntimeError(f"Groq API request failed: {e.response.status_code}")
         except Exception as e:
             logger.error(f"Groq API request failed: {e}")
@@ -110,7 +113,7 @@ class GroqLLMBackend:
         temperature: float = 0.7,
         top_p: float = 0.9,
         stop_event: Optional[asyncio.Event] = None,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[str]:
         """
         Generate text with streaming using Groq API
@@ -142,8 +145,8 @@ class GroqLLMBackend:
                     "max_tokens": max_tokens,
                     "temperature": temperature,
                     "top_p": top_p,
-                    "stream": True
-                }
+                    "stream": True,
+                },
             ) as response:
                 response.raise_for_status()
 
@@ -162,6 +165,7 @@ class GroqLLMBackend:
 
                     try:
                         import json
+
                         data = json.loads(line)
                         delta = data["choices"][0].get("delta", {})
                         content = delta.get("content", "")
@@ -210,34 +214,33 @@ GROQ_MODELS = {
     "llama-3.1-70b-versatile": {
         "name": "Llama 3.1 70B Versatile",
         "context_length": 131072,
-        "description": "Fastest large model, great for most tasks"
+        "description": "Fastest large model, great for most tasks",
     },
     "llama-3.1-8b-instant": {
         "name": "Llama 3.1 8B Instant",
         "context_length": 131072,
-        "description": "Ultra-fast lightweight model"
+        "description": "Ultra-fast lightweight model",
     },
     "llama-3.2-90b-vision-preview": {
         "name": "Llama 3.2 90B Vision",
         "context_length": 8192,
-        "description": "Vision-capable model (preview)"
+        "description": "Vision-capable model (preview)",
     },
     "mixtral-8x7b-32768": {
         "name": "Mixtral 8x7B",
         "context_length": 32768,
-        "description": "Mixture of Experts model"
+        "description": "Mixture of Experts model",
     },
     "gemma2-9b-it": {
         "name": "Gemma 2 9B",
         "context_length": 8192,
-        "description": "Google's Gemma model"
-    }
+        "description": "Google's Gemma model",
+    },
 }
 
 
 def get_groq_backend(
-    api_key: Optional[str] = None,
-    model: str = "llama-3.1-70b-versatile"
+    api_key: Optional[str] = None, model: str = "llama-3.1-70b-versatile"
 ) -> GroqLLMBackend:
     """
     Convenience function to create a Groq backend

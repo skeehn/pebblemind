@@ -1,10 +1,8 @@
 """Unit tests for Tool Integration System"""
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-import json
 
-from pebblemind.tool_integration import ToolManager, FunctionCallingManager
+from pebblemind.tool_integration import FunctionCallingManager, ToolManager
 
 
 @pytest.mark.unit
@@ -54,7 +52,9 @@ class TestCalculatorTool:
         manager = ToolManager()
 
         for expression, expected in calculator_expressions["valid"]:
-            result = await manager.execute_tool("calculator", {"expression": expression})
+            result = await manager.execute_tool(
+                "calculator", {"expression": expression}
+            )
             assert result["success"]
             assert "result" in result["result"].lower()
             # Extract the numeric result and verify
@@ -67,12 +67,7 @@ class TestCalculatorTool:
         manager = ToolManager()
 
         # These should work with safe_eval
-        safe_expressions = [
-            "2 + 2",
-            "10 * 5",
-            "(3 + 4) * 2",
-            "2 ** 3"
-        ]
+        safe_expressions = ["2 + 2", "10 * 5", "(3 + 4) * 2", "2 ** 3"]
 
         for expr in safe_expressions:
             result = await manager.execute_tool("calculator", {"expression": expr})
@@ -96,8 +91,10 @@ class TestCalculatorTool:
         for expr in malicious_expressions:
             result = await manager.execute_tool("calculator", {"expression": expr})
             # Should fail - either not successful or raise an error
-            assert not result.get("success", False) or "error" in result.get("result", "").lower(), \
-                f"Malicious expression '{expr}' should be rejected"
+            assert (
+                not result.get("success", False)
+                or "error" in result.get("result", "").lower()
+            ), f"Malicious expression '{expr}' should be rejected"
 
     @pytest.mark.asyncio
     async def test_calculator_prevents_attribute_access(self):
@@ -111,8 +108,9 @@ class TestCalculatorTool:
 
         for expr in dangerous_expressions:
             result = await manager.execute_tool("calculator", {"expression": expr})
-            assert not result.get("success", False), \
-                f"Attribute access '{expr}' should be prevented"
+            assert not result.get(
+                "success", False
+            ), f"Attribute access '{expr}' should be prevented"
 
 
 @pytest.mark.unit
@@ -125,15 +123,17 @@ class TestCodeExecutorTool:
         manager = ToolManager()
 
         for code in safe_code_samples["safe"]:
-            result = await manager.execute_tool("code_executor", {
-                "language": "python",
-                "code": code
-            })
+            result = await manager.execute_tool(
+                "code_executor", {"language": "python", "code": code}
+            )
             # Should execute without raising security errors
             assert "result" in result
             # Check for output or success message
             result_text = result["result"]
-            assert "error" not in result_text.lower() or "execution error" in result_text.lower()
+            assert (
+                "error" not in result_text.lower()
+                or "execution error" in result_text.lower()
+            )
 
     @pytest.mark.asyncio
     async def test_code_executor_blocks_unsafe_code(self, safe_code_samples):
@@ -141,14 +141,14 @@ class TestCodeExecutorTool:
         manager = ToolManager()
 
         for code in safe_code_samples["unsafe"]:
-            result = await manager.execute_tool("code_executor", {
-                "language": "python",
-                "code": code
-            })
+            result = await manager.execute_tool(
+                "code_executor", {"language": "python", "code": code}
+            )
             # Should be rejected
             result_text = result.get("result", "")
-            assert "unsafe" in result_text.lower() or "not allowed" in result_text.lower(), \
-                f"Unsafe code should be rejected: {code[:50]}"
+            assert (
+                "unsafe" in result_text.lower() or "not allowed" in result_text.lower()
+            ), f"Unsafe code should be rejected: {code[:50]}"
 
     @pytest.mark.asyncio
     async def test_code_executor_blocks_imports(self):
@@ -163,13 +163,13 @@ class TestCodeExecutorTool:
         ]
 
         for code in import_tests:
-            result = await manager.execute_tool("code_executor", {
-                "language": "python",
-                "code": code
-            })
+            result = await manager.execute_tool(
+                "code_executor", {"language": "python", "code": code}
+            )
             result_text = result.get("result", "")
-            assert "import" in result_text.lower() and "not allowed" in result_text.lower(), \
-                f"Import should be blocked: {code}"
+            assert (
+                "import" in result_text.lower() and "not allowed" in result_text.lower()
+            ), f"Import should be blocked: {code}"
 
     @pytest.mark.asyncio
     async def test_code_executor_length_limit(self):
@@ -179,10 +179,9 @@ class TestCodeExecutorTool:
         # Generate code longer than 1000 characters
         long_code = "x = 1\n" * 500  # ~3000 characters
 
-        result = await manager.execute_tool("code_executor", {
-            "language": "python",
-            "code": long_code
-        })
+        result = await manager.execute_tool(
+            "code_executor", {"language": "python", "code": long_code}
+        )
         result_text = result.get("result", "")
         assert "too long" in result_text.lower(), "Long code should be rejected"
 
@@ -191,12 +190,13 @@ class TestCodeExecutorTool:
         """Test that only Python is supported"""
         manager = ToolManager()
 
-        result = await manager.execute_tool("code_executor", {
-            "language": "javascript",
-            "code": "console.log('test')"
-        })
+        result = await manager.execute_tool(
+            "code_executor", {"language": "javascript", "code": "console.log('test')"}
+        )
         result_text = result.get("result", "")
-        assert "only python" in result_text.lower(), "Non-Python languages should be rejected"
+        assert (
+            "only python" in result_text.lower()
+        ), "Non-Python languages should be rejected"
 
     @pytest.mark.asyncio
     async def test_code_executor_captures_print(self):
@@ -204,14 +204,14 @@ class TestCodeExecutorTool:
         manager = ToolManager()
 
         code = "print('Hello, World!')"
-        result = await manager.execute_tool("code_executor", {
-            "language": "python",
-            "code": code
-        })
+        result = await manager.execute_tool(
+            "code_executor", {"language": "python", "code": code}
+        )
 
         result_text = result.get("result", "")
-        assert "hello" in result_text.lower() and "world" in result_text.lower(), \
-            "Print output should be captured"
+        assert (
+            "hello" in result_text.lower() and "world" in result_text.lower()
+        ), "Print output should be captured"
 
 
 @pytest.mark.unit
@@ -228,9 +228,9 @@ class TestFileReaderTool:
         test_content = "This is a test file"
         test_file.write_text(test_content)
 
-        result = await manager.execute_tool("file_reader", {
-            "file_path": str(test_file)
-        })
+        result = await manager.execute_tool(
+            "file_reader", {"file_path": str(test_file)}
+        )
 
         assert result["success"]
         assert test_content in result["result"]
@@ -249,8 +249,9 @@ class TestFileReaderTool:
         for path in unsafe_paths:
             result = await manager.execute_tool("file_reader", {"file_path": path})
             # Should fail
-            assert not result.get("success", False) or "error" in result, \
-                f"Unsafe path should be rejected: {path}"
+            assert (
+                not result.get("success", False) or "error" in result
+            ), f"Unsafe path should be rejected: {path}"
 
     @pytest.mark.asyncio
     async def test_file_reader_rejects_large_files(self, temp_dir):
@@ -261,12 +262,16 @@ class TestFileReaderTool:
         large_file = temp_dir / "large.txt"
         large_file.write_text("x" * (1024 * 1024 + 1))
 
-        result = await manager.execute_tool("file_reader", {
-            "file_path": str(large_file)
-        })
+        result = await manager.execute_tool(
+            "file_reader", {"file_path": str(large_file)}
+        )
 
         # Should be rejected
-        result_text = str(result.get("result", "")) if "result" in result else str(result.get("error", ""))
+        result_text = (
+            str(result.get("result", ""))
+            if "result" in result
+            else str(result.get("error", ""))
+        )
         assert "too large" in result_text.lower(), "Large files should be rejected"
 
     @pytest.mark.asyncio
@@ -278,9 +283,9 @@ class TestFileReaderTool:
         unsafe_file = temp_dir / "test.exe"
         unsafe_file.write_text("test")
 
-        result = await manager.execute_tool("file_reader", {
-            "file_path": str(unsafe_file)
-        })
+        result = await manager.execute_tool(
+            "file_reader", {"file_path": str(unsafe_file)}
+        )
 
         # Should be rejected
         assert not result.get("success", False), "Unsafe file type should be rejected"
@@ -330,7 +335,9 @@ class TestFunctionCallingManager:
         assert "original_task" in result
         assert "steps_executed" in result
         # Should have used calculator
-        assert any("calculator" in str(step).lower() for step in result["steps_executed"])
+        assert any(
+            "calculator" in str(step).lower() for step in result["steps_executed"]
+        )
 
     @pytest.mark.asyncio
     async def test_analyze_task_extracts_calculation(self):
@@ -365,7 +372,7 @@ class TestToolParsing:
         """Test handling of invalid JSON in tool calls"""
         manager = ToolManager()
 
-        text = '[[calculator: {invalid json}]]'
+        text = "[[calculator: {invalid json}]]"
         results = await manager.parse_and_execute_tools(text)
 
         assert len(results) > 0

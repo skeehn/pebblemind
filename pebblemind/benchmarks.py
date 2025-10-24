@@ -5,12 +5,11 @@ Measures actual performance of LLM inference, RAG, and other components
 with real-world workloads.
 """
 
-import asyncio
-import time
-import statistics
-from typing import Dict, List, Any, Optional, Callable
-from dataclasses import dataclass, field
 import logging
+import statistics
+import time
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class BenchmarkResult:
     """Results from a single benchmark"""
+
     name: str
     total_time: float
     iterations: int
@@ -43,7 +43,7 @@ class BenchmarkResult:
             "max_time": self.max_time,
             "tokens_per_second": self.tokens_per_second,
             "throughput": self.throughput,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
     def __str__(self) -> str:
@@ -56,7 +56,7 @@ class BenchmarkResult:
             f"  Median: {self.median_time:.3f}s",
             f"  Std Dev: {self.std_dev:.3f}s",
             f"  Min: {self.min_time:.3f}s",
-            f"  Max: {self.max_time:.3f}s"
+            f"  Max: {self.max_time:.3f}s",
         ]
 
         if self.tokens_per_second:
@@ -81,12 +81,7 @@ class PerformanceBenchmark:
         self.results: List[BenchmarkResult] = []
 
     async def benchmark_async(
-        self,
-        name: str,
-        func: Callable,
-        iterations: int = 10,
-        warmup: int = 2,
-        **kwargs
+        self, name: str, func: Callable, iterations: int = 10, warmup: int = 2, **kwargs
     ) -> BenchmarkResult:
         """
         Benchmark an async function
@@ -132,19 +127,14 @@ class PerformanceBenchmark:
             std_dev=statistics.stdev(times) if len(times) > 1 else 0.0,
             min_time=min(times),
             max_time=max(times),
-            throughput=iterations / total_time
+            throughput=iterations / total_time,
         )
 
         self.results.append(result)
         return result
 
     def benchmark_sync(
-        self,
-        name: str,
-        func: Callable,
-        iterations: int = 10,
-        warmup: int = 2,
-        **kwargs
+        self, name: str, func: Callable, iterations: int = 10, warmup: int = 2, **kwargs
     ) -> BenchmarkResult:
         """
         Benchmark a synchronous function
@@ -190,7 +180,7 @@ class PerformanceBenchmark:
             std_dev=statistics.stdev(times) if len(times) > 1 else 0.0,
             min_time=min(times),
             max_time=max(times),
-            throughput=iterations / total_time
+            throughput=iterations / total_time,
         )
 
         self.results.append(result)
@@ -200,7 +190,7 @@ class PerformanceBenchmark:
         self,
         llm_backend,
         prompt: str = "Explain quantum computing in simple terms.",
-        iterations: int = 5
+        iterations: int = 5,
     ) -> BenchmarkResult:
         """
         Benchmark LLM inference
@@ -213,13 +203,12 @@ class PerformanceBenchmark:
         Returns:
             BenchmarkResult
         """
+
         async def run_inference():
             return await llm_backend.generate(prompt=prompt, max_tokens=100)
 
         result = await self.benchmark_async(
-            name="LLM Inference",
-            func=run_inference,
-            iterations=iterations
+            name="LLM Inference", func=run_inference, iterations=iterations
         )
 
         # Calculate tokens per second (estimate)
@@ -229,7 +218,7 @@ class PerformanceBenchmark:
         result.metadata = {
             "prompt": prompt[:50] + "...",
             "max_tokens": 100,
-            "backend": type(llm_backend).__name__
+            "backend": type(llm_backend).__name__,
         }
 
         return result
@@ -238,7 +227,7 @@ class PerformanceBenchmark:
         self,
         llm_backend,
         prompt: str = "Write a short story about AI.",
-        iterations: int = 3
+        iterations: int = 3,
     ) -> BenchmarkResult:
         """
         Benchmark LLM streaming
@@ -251,31 +240,29 @@ class PerformanceBenchmark:
         Returns:
             BenchmarkResult
         """
+
         async def run_streaming():
             chunks = []
-            async for chunk in llm_backend.generate_stream(prompt=prompt, max_tokens=100):
+            async for chunk in llm_backend.generate_stream(
+                prompt=prompt, max_tokens=100
+            ):
                 chunks.append(chunk)
             return "".join(chunks)
 
         result = await self.benchmark_async(
-            name="LLM Streaming",
-            func=run_streaming,
-            iterations=iterations
+            name="LLM Streaming", func=run_streaming, iterations=iterations
         )
 
         result.metadata = {
             "prompt": prompt[:50] + "...",
             "max_tokens": 100,
-            "backend": type(llm_backend).__name__
+            "backend": type(llm_backend).__name__,
         }
 
         return result
 
     async def benchmark_rag_search(
-        self,
-        rag_system,
-        queries: List[str] = None,
-        iterations: int = 10
+        self, rag_system, queries: List[str] = None, iterations: int = 10
     ) -> BenchmarkResult:
         """
         Benchmark RAG search
@@ -293,7 +280,7 @@ class PerformanceBenchmark:
                 "What is machine learning?",
                 "Explain neural networks",
                 "How does Python work?",
-                "Tell me about databases"
+                "Tell me about databases",
             ]
 
         async def run_search():
@@ -301,23 +288,15 @@ class PerformanceBenchmark:
             return await rag_system.search(query, k=5)
 
         result = await self.benchmark_async(
-            name="RAG Search",
-            func=run_search,
-            iterations=iterations
+            name="RAG Search", func=run_search, iterations=iterations
         )
 
-        result.metadata = {
-            "queries": len(queries),
-            "k": 5
-        }
+        result.metadata = {"queries": len(queries), "k": 5}
 
         return result
 
     async def benchmark_rag_indexing(
-        self,
-        rag_system,
-        documents: List[Dict[str, Any]],
-        iterations: int = 3
+        self, rag_system, documents: List[Dict[str, Any]], iterations: int = 3
     ) -> BenchmarkResult:
         """
         Benchmark RAG document indexing
@@ -330,18 +309,17 @@ class PerformanceBenchmark:
         Returns:
             BenchmarkResult
         """
+
         async def run_indexing():
             await rag_system.add_documents(documents)
 
         result = await self.benchmark_async(
-            name="RAG Indexing",
-            func=run_indexing,
-            iterations=iterations
+            name="RAG Indexing", func=run_indexing, iterations=iterations
         )
 
         result.metadata = {
             "documents": len(documents),
-            "total_chars": sum(len(d.get("content", "")) for d in documents)
+            "total_chars": sum(len(d.get("content", "")) for d in documents),
         }
 
         return result
@@ -367,7 +345,7 @@ class PerformanceBenchmark:
 
         data = {
             "timestamp": time.time(),
-            "results": [r.to_dict() for r in self.results]
+            "results": [r.to_dict() for r in self.results],
         }
 
         Path(filepath).write_text(json.dumps(data, indent=2))
@@ -412,7 +390,9 @@ async def run_full_benchmark(llm_backend, rag_system=None) -> PerformanceBenchma
             {"content": f"This is test document {i} with some sample content." * 10}
             for i in range(5)
         ]
-        result = await benchmark.benchmark_rag_indexing(rag_system, test_docs, iterations=3)
+        result = await benchmark.benchmark_rag_indexing(
+            rag_system, test_docs, iterations=3
+        )
         print(result)
     else:
         print("\n[3/4] Skipping RAG benchmarks (no RAG system provided)")

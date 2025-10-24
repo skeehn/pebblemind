@@ -1,11 +1,12 @@
+import time
 from dataclasses import dataclass
 from typing import List
-import time
 
 
 @dataclass
 class MemoryRecord:
     """A single memory entry."""
+
     timestamp: float
     role: str
     content: str

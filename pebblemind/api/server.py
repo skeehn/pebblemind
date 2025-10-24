@@ -1,29 +1,36 @@
 """OpenAI-compatible API server for PebbleMind"""
 
 import asyncio
-import logging
 import json
+import logging
 import time
-from typing import Dict, Any, List, Optional
 from datetime import datetime
+from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect
+import uvicorn
+from fastapi import (FastAPI, HTTPException, Request, WebSocket,
+                     WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-import uvicorn
 
+from ..config import APIConfig
 from ..core import PebbleMind
 from ..core.streaming import sse_stream, websocket_stream
-from ..config import APIConfig
 
 logger = logging.getLogger(__name__)
 
 
 # OpenAI-compatible data models
 class ChatMessage(BaseModel):
-    role: str = Field(..., description="Role of the message author", pattern="^(system|user|assistant)$")
-    content: str = Field(..., description="Content of the message", min_length=1, max_length=50000)
+    role: str = Field(
+        ...,
+        description="Role of the message author",
+        pattern="^(system|user|assistant)$",
+    )
+    content: str = Field(
+        ..., description="Content of the message", min_length=1, max_length=50000
+    )
 
     @property
     def is_valid_role(self) -> bool:
@@ -32,10 +39,18 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = Field(..., description="Model to use for completion", min_length=1, max_length=100)
-    messages: List[ChatMessage] = Field(..., description="List of messages", min_items=1, max_items=100)
-    max_tokens: Optional[int] = Field(None, description="Maximum tokens to generate", ge=1, le=8192)
-    temperature: Optional[float] = Field(0.7, description="Sampling temperature", ge=0.0, le=2.0)
+    model: str = Field(
+        ..., description="Model to use for completion", min_length=1, max_length=100
+    )
+    messages: List[ChatMessage] = Field(
+        ..., description="List of messages", min_items=1, max_items=100
+    )
+    max_tokens: Optional[int] = Field(
+        None, description="Maximum tokens to generate", ge=1, le=8192
+    )
+    temperature: Optional[float] = Field(
+        0.7, description="Sampling temperature", ge=0.0, le=2.0
+    )
     top_p: Optional[float] = Field(0.9, description="Top-p sampling", ge=0.0, le=1.0)
     top_k: Optional[int] = Field(40, description="Top-k sampling", ge=1, le=100)
     stream: Optional[bool] = Field(False, description="Stream the response")
@@ -43,6 +58,7 @@ class ChatCompletionRequest(BaseModel):
 
     class Config:
         """Pydantic config"""
+
         str_strip_whitespace = True  # Auto-strip whitespace from strings
 
 
@@ -81,8 +97,13 @@ class ModelList(BaseModel):
 
 class SpeechRequest(BaseModel):
     """Request model for text-to-speech"""
-    input: str = Field(..., description="Text to convert to speech", min_length=1, max_length=10000)
-    model: str = Field(default="tts-1", description="TTS model to use", pattern="^tts-[0-9]+$")
+
+    input: str = Field(
+        ..., description="Text to convert to speech", min_length=1, max_length=10000
+    )
+    model: str = Field(
+        default="tts-1", description="TTS model to use", pattern="^tts-[0-9]+$"
+    )
     voice: str = Field(default="alloy", description="Voice to use")
 
     class Config:
@@ -91,6 +112,7 @@ class SpeechRequest(BaseModel):
 
 class TranscriptionResponse(BaseModel):
     """Response model for speech-to-text"""
+
     text: str = Field(..., description="Transcribed text")
 
 
@@ -131,7 +153,7 @@ class APIServer:
                 ModelInfo(
                     id="pebblemind-chat",
                     created=int(time.time()),
-                    owned_by="pebblemind"
+                    owned_by="pebblemind",
                 )
             ]
             return ModelList(data=models)
@@ -141,15 +163,15 @@ class APIServer:
             """Get model information"""
             if model_id == "pebblemind-chat":
                 return ModelInfo(
-                    id=model_id,
-                    created=int(time.time()),
-                    owned_by="pebblemind"
+                    id=model_id, created=int(time.time()), owned_by="pebblemind"
                 )
             else:
                 raise HTTPException(status_code=404, detail="Model not found")
 
         @self.app.post("/v1/chat/completions")
-        async def create_chat_completion(request: ChatCompletionRequest, raw_request: Request):
+        async def create_chat_completion(
+            request: ChatCompletionRequest, raw_request: Request
+        ):
             """Create chat completion (OpenAI-compatible)"""
             try:
                 # Extract user message from the conversation
@@ -184,24 +206,24 @@ class APIServer:
                             system_prompt,
                             request.model,
                             raw_request,
-                            **gen_params
+                            **gen_params,
                         ),
-                        media_type="text/plain"
+                        media_type="text/plain",
                     )
                 else:
                     # Regular response
                     start_time = time.time()
 
                     response_text = await self.pebblemind.query(
-                        user_message,
-                        system_prompt=system_prompt,
-                        **gen_params
+                        user_message, system_prompt=system_prompt, **gen_params
                     )
 
-                    end_time = time.time()
+                    time.time()
 
                     # Estimate token usage (rough approximation)
-                    prompt_tokens = len(user_message.split()) * 1.3  # Rough token estimation
+                    prompt_tokens = (
+                        len(user_message.split()) * 1.3
+                    )  # Rough token estimation
                     completion_tokens = len(response_text.split()) * 1.3
 
                     return ChatCompletionResponse(
@@ -211,15 +233,17 @@ class APIServer:
                         choices=[
                             ChatCompletionChoice(
                                 index=0,
-                                message=ChatMessage(role="assistant", content=response_text),
-                                finish_reason="stop"
+                                message=ChatMessage(
+                                    role="assistant", content=response_text
+                                ),
+                                finish_reason="stop",
                             )
                         ],
                         usage=ChatCompletionUsage(
                             prompt_tokens=int(prompt_tokens),
                             completion_tokens=int(completion_tokens),
-                            total_tokens=int(prompt_tokens + completion_tokens)
-                        )
+                            total_tokens=int(prompt_tokens + completion_tokens),
+                        ),
                     )
 
             except Exception as e:
@@ -233,10 +257,12 @@ class APIServer:
                 # Parse multipart form data
                 form = await request.form()
                 audio_file = form.get("file")
-                model = form.get("model", "whisper-1")
+                form.get("model", "whisper-1")
 
                 if not audio_file:
-                    raise HTTPException(status_code=400, detail="No audio file provided")
+                    raise HTTPException(
+                        status_code=400, detail="No audio file provided"
+                    )
 
                 # Read audio data with size limit (25MB max)
                 MAX_AUDIO_SIZE = 25 * 1024 * 1024  # 25MB
@@ -245,14 +271,16 @@ class APIServer:
                 if len(audio_data) > MAX_AUDIO_SIZE:
                     raise HTTPException(
                         status_code=413,
-                        detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE / (1024*1024):.0f}MB"
+                        detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE / (1024*1024):.0f}MB",
                     )
 
                 if len(audio_data) == 0:
                     raise HTTPException(status_code=400, detail="Empty audio file")
 
                 # Process with voice processor
-                transcription = await self.pebblemind.voice_processor.speech_to_text(audio_data)
+                transcription = await self.pebblemind.voice_processor.speech_to_text(
+                    audio_data
+                )
 
                 return TranscriptionResponse(text=transcription)
 
@@ -265,14 +293,17 @@ class APIServer:
             """Generate speech from text (OpenAI-compatible)"""
             try:
                 # Generate speech
-                audio_data = await self.pebblemind.voice_processor.text_to_speech(speech_request.input)
+                audio_data = await self.pebblemind.voice_processor.text_to_speech(
+                    speech_request.input
+                )
 
                 # Return audio data
                 from fastapi.responses import Response
+
                 return Response(
                     content=audio_data,
                     media_type="audio/wav",
-                    headers={"Content-Disposition": "attachment; filename=speech.wav"}
+                    headers={"Content-Disposition": "attachment; filename=speech.wav"},
                 )
 
             except Exception as e:
@@ -310,7 +341,7 @@ class APIServer:
                     message,
                     system_prompt=system_prompt,
                     stop_event=stop_event,
-                    **gen_params
+                    **gen_params,
                 )
 
                 await websocket_stream(websocket, generator, stop_event)
@@ -318,14 +349,13 @@ class APIServer:
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected")
 
-
     async def _stream_chat_completion(
         self,
         message: str,
         system_prompt: Optional[str],
         model: str,
         raw_request: Request,
-        **kwargs
+        **kwargs,
     ):
         """Stream chat completion response"""
         stop_event = asyncio.Event()
@@ -338,10 +368,7 @@ class APIServer:
 
         try:
             generator = self.pebblemind.llm_engine.generate_stream(
-                message,
-                system_prompt=system_prompt,
-                stop_event=stop_event,
-                **kwargs
+                message, system_prompt=system_prompt, stop_event=stop_event, **kwargs
             )
             async for chunk in sse_stream(generator, model, raw_request):
                 yield chunk
@@ -357,10 +384,7 @@ class APIServer:
         logger.info(f"Starting API server on {self.config.host}:{self.config.port}")
 
         config = uvicorn.Config(
-            self.app,
-            host=self.config.host,
-            port=self.config.port,
-            log_level="info"
+            self.app, host=self.config.host, port=self.config.port, log_level="info"
         )
 
         self.server = uvicorn.Server(config)
