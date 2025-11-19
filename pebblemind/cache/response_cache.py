@@ -163,11 +163,13 @@ class ResponseCache:
             # Check expiration
             if entry.is_expired():
                 del self._cache[key]
+                # Always update size counters (needed for eviction)
+                self._stats["current_size"] -= 1
+                self._stats["current_memory_bytes"] -= entry.size_bytes
+                # Update stats counters only if enabled
                 if self.enable_stats:
                     self._stats["misses"] += 1
                     self._stats["expirations"] += 1
-                    self._stats["current_size"] -= 1
-                    self._stats["current_memory_bytes"] -= entry.size_bytes
                 return None, False
 
             # Update entry (LRU)
@@ -212,14 +214,14 @@ class ResponseCache:
             if key in self._cache:
                 old_entry = self._cache[key]
                 self._stats["current_memory_bytes"] -= old_entry.size_bytes
-                del self._cache[key]
                 self._stats["current_size"] -= 1
+                del self._cache[key]
 
             # Add new entry
             self._cache[key] = entry
-            if self.enable_stats:
-                self._stats["current_size"] += 1
-                self._stats["current_memory_bytes"] += size_bytes
+            # Always update size counters (needed for eviction)
+            self._stats["current_size"] += 1
+            self._stats["current_memory_bytes"] += size_bytes
 
     async def _evict_if_needed(self, incoming_size: int):
         """Evict entries if needed to make room"""
@@ -233,10 +235,12 @@ class ResponseCache:
 
             # Remove oldest (LRU)
             key, entry = self._cache.popitem(last=False)
+            # Always update size counters (needed for eviction)
+            self._stats["current_size"] -= 1
+            self._stats["current_memory_bytes"] -= entry.size_bytes
+            # Update stats counter only if enabled
             if self.enable_stats:
                 self._stats["evictions"] += 1
-                self._stats["current_size"] -= 1
-                self._stats["current_memory_bytes"] -= entry.size_bytes
 
     async def delete(self, key: str) -> bool:
         """Delete entry from cache"""
@@ -244,9 +248,9 @@ class ResponseCache:
             if key in self._cache:
                 entry = self._cache[key]
                 del self._cache[key]
-                if self.enable_stats:
-                    self._stats["current_size"] -= 1
-                    self._stats["current_memory_bytes"] -= entry.size_bytes
+                # Always update size counters (needed for eviction)
+                self._stats["current_size"] -= 1
+                self._stats["current_memory_bytes"] -= entry.size_bytes
                 return True
             return False
 
@@ -254,9 +258,9 @@ class ResponseCache:
         """Clear entire cache"""
         async with self._lock:
             self._cache.clear()
-            if self.enable_stats:
-                self._stats["current_size"] = 0
-                self._stats["current_memory_bytes"] = 0
+            # Always update size counters (needed for eviction)
+            self._stats["current_size"] = 0
+            self._stats["current_memory_bytes"] = 0
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics"""
@@ -297,10 +301,12 @@ class ResponseCache:
             for key in expired_keys:
                 entry = self._cache[key]
                 del self._cache[key]
+                # Always update size counters (needed for eviction)
+                self._stats["current_size"] -= 1
+                self._stats["current_memory_bytes"] -= entry.size_bytes
+                # Update stats counter only if enabled
                 if self.enable_stats:
                     self._stats["expirations"] += 1
-                    self._stats["current_size"] -= 1
-                    self._stats["current_memory_bytes"] -= entry.size_bytes
 
             if expired_keys:
                 logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")

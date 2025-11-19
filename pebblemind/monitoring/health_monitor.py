@@ -179,6 +179,7 @@ class HealthMonitor:
         """Initialize health monitor"""
         self._health_checks: Dict[str, HealthCheck] = {}
         self._health_status: Dict[str, HealthStatus] = {}
+        self._last_run_times: Dict[str, float] = {}  # Track when each check last ran
         self._metrics = MetricsCollector()
         self._alert_handlers: List[Callable] = []
         self._monitoring_task: Optional[asyncio.Task] = None
@@ -291,9 +292,19 @@ class HealthMonitor:
         """Main monitoring loop"""
         while self._running:
             try:
-                # Run all health checks
+                current_time = time.time()
+
+                # Run health checks that are due based on their intervals
                 for name, check in self._health_checks.items():
-                    asyncio.create_task(self._run_health_check(name, check))
+                    last_run = self._last_run_times.get(name, 0)
+                    time_since_last_run = current_time - last_run
+
+                    # Only run if interval has passed
+                    if time_since_last_run >= check.interval:
+                        # Update last run time immediately to prevent duplicate runs
+                        self._last_run_times[name] = current_time
+                        # Schedule the check
+                        asyncio.create_task(self._run_health_check(name, check))
 
                 # Wait before next iteration
                 await asyncio.sleep(1)
