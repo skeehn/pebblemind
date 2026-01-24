@@ -18,6 +18,12 @@ __author__ = "PebbleMind Team"
 __email__ = "team@pebblemind.ai"
 
 from .config import Config
-from .core import PebbleMind
+
+# Lazy import to avoid loading heavy dependencies at module import time
+def __getattr__(name):
+    if name == "PebbleMind":
+        from .core import PebbleMind
+        return PebbleMind
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 __all__ = ["Config", "PebbleMind"]
