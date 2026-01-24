@@ -2,12 +2,20 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pebblemind*"]
+exclude = ["tests*", "desktop*", "data*", "docs*", "examples*", "scripts*"]
+
 [project]
 name = "pebblemind"
 version = "0.1.0"
 description = "World's Smallest Intelligent Reasoning Model - CPU-First Local AI Assistant with Privacy-First Architecture"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "PebbleMind Team", email = "team@pebblemind.ai"}
 ]
@@ -15,7 +23,6 @@ keywords = ["ai", "assistant", "local", "cpu", "privacy", "llm", "rag", "voice"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",

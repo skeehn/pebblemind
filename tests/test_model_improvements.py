@@ -473,8 +473,8 @@ async def test_compare_models():
 
     assert "good" in results
     assert "bad" in results
-    # Good model should have higher accuracy
-    assert results["good"].metric_scores.get("accuracy", 0) > results["bad"].metric_scores.get("accuracy", 0)
+    # Good model should have higher exact_match score
+    assert results["good"].metric_scores.get("exact_match", 0) > results["bad"].metric_scores.get("exact_match", 0)
 
 
 def test_add_custom_benchmark():

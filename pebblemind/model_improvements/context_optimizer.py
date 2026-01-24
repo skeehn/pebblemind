@@ -9,7 +9,11 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 import logging
-import tiktoken
+
+try:
+    import tiktoken
+except ImportError:
+    tiktoken = None
 
 logger = logging.getLogger(__name__)
 

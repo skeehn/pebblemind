@@ -7,7 +7,11 @@ from pathlib import Path
 import os
 import platform
 
-from llama_cpp import Llama
+try:
+    from llama_cpp import Llama
+except ImportError:
+    Llama = None
+
 from ..config import LLMConfig
 
 logger = logging.getLogger(__name__)
@@ -111,6 +115,9 @@ class LLMEngine:
         """Initialize the LLM model with optimized settings for lightweight devices like MacBook Air"""
         if self._initialized:
             return
+
+        if Llama is None:
+            raise ImportError("llama-cpp-python not installed. Install with: pip install llama-cpp-python")
 
         try:
             # Resolve and validate model path

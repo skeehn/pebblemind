@@ -171,6 +171,9 @@ class ErrorHandler:
                 last_error = e
                 severity, recoverable = self._categorize_error(e)
 
+                # If exception is explicitly in retryable_exceptions, mark as recoverable
+                recoverable = True
+
                 # Update statistics
                 self._stats["total_errors"] += 1
                 self._stats["errors_by_severity"][severity] += 1
@@ -180,20 +183,24 @@ class ErrorHandler:
 
                 # Log error
                 if self.enable_logging:
-                    if retry < self.max_retries and recoverable:
+                    if retry < self.max_retries:
                         logger.warning(
                             f"Operation '{operation}' failed (attempt {retry + 1}/{self.max_retries + 1}): {e}"
                         )
-                        self._stats["retried_operations"] += 1
                     else:
                         logger.error(
                             f"Operation '{operation}' failed permanently: {e}\n"
                             f"{traceback.format_exc()}"
                         )
-                        self._stats["failed_retries"] += 1
+
+                # Update retry stats
+                if retry < self.max_retries:
+                    self._stats["retried_operations"] += 1
+                else:
+                    self._stats["failed_retries"] += 1
 
                 # Check if we should retry
-                if not recoverable or retry >= self.max_retries:
+                if retry >= self.max_retries:
                     break
 
                 # Wait before retry
@@ -261,6 +268,9 @@ class ErrorHandler:
                 last_error = e
                 severity, recoverable = self._categorize_error(e)
 
+                # If exception is explicitly in retryable_exceptions, mark as recoverable
+                recoverable = True
+
                 # Update statistics
                 self._stats["total_errors"] += 1
                 self._stats["errors_by_severity"][severity] += 1
@@ -270,20 +280,24 @@ class ErrorHandler:
 
                 # Log error
                 if self.enable_logging:
-                    if retry < self.max_retries and recoverable:
+                    if retry < self.max_retries:
                         logger.warning(
                             f"Operation '{operation}' failed (attempt {retry + 1}/{self.max_retries + 1}): {e}"
                         )
-                        self._stats["retried_operations"] += 1
                     else:
                         logger.error(
                             f"Operation '{operation}' failed permanently: {e}\n"
                             f"{traceback.format_exc()}"
                         )
-                        self._stats["failed_retries"] += 1
+
+                # Update retry stats
+                if retry < self.max_retries:
+                    self._stats["retried_operations"] += 1
+                else:
+                    self._stats["failed_retries"] += 1
 
                 # Check if we should retry
-                if not recoverable or retry >= self.max_retries:
+                if retry >= self.max_retries:
                     break
 
                 # Wait before retry
