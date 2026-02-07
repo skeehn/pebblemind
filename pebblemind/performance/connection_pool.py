@@ -216,42 +216,53 @@ class ConnectionPool(Generic[T]):
         """
         conn_id = None
         pooled = None
+        start_time = asyncio.get_event_loop().time()
 
         try:
-            # Wait for available connection
-            try:
-                conn_id = await asyncio.wait_for(
-                    self._available.get(),
-                    timeout=timeout
-                )
-            except asyncio.TimeoutError:
-                self._stats["wait_timeouts"] += 1
-                raise TimeoutError("Timeout waiting for connection")
+            while True:
+                # Calculate remaining timeout
+                current_time = asyncio.get_event_loop().time()
+                remaining = timeout - (current_time - start_time) if timeout else None
+                if timeout and remaining <= 0:
+                    self._stats["wait_timeouts"] += 1
+                    raise TimeoutError("Timeout waiting for connection")
 
-            # Get connection
-            async with self._lock:
-                pooled = self._pool.get(conn_id)
-                if not pooled:
-                    # Connection was closed, try again
-                    return await self.acquire(timeout=timeout)
+                # Wait for available connection
+                try:
+                    conn_id = await asyncio.wait_for(
+                        self._available.get(),
+                        timeout=remaining
+                    )
+                except asyncio.TimeoutError:
+                    self._stats["wait_timeouts"] += 1
+                    raise TimeoutError("Timeout waiting for connection")
 
-                # Check health
-                if not await self._check_health(pooled):
-                    # Connection unhealthy, recreate
-                    await self._close_connection(conn_id, pooled)
-                    self._stats["health_check_failures"] += 1
-                    conn_id = await self._create_connection()
-                    pooled = self._pool[conn_id]
+                # Get connection
+                async with self._lock:
+                    pooled = self._pool.get(conn_id)
+                    if not pooled:
+                        # Connection was closed, try again
+                        continue
 
-                # Mark as in use
-                pooled.in_use = True
-                pooled.use_count += 1
-                pooled.last_used = asyncio.get_event_loop().time()
+                    # Check health
+                    if not await self._check_health(pooled):
+                        # Connection unhealthy, recreate
+                        await self._close_connection(conn_id, pooled)
+                        self._stats["health_check_failures"] += 1
+                        conn_id = await self._create_connection()
+                        pooled = self._pool[conn_id]
 
-                if self.enable_stats:
-                    self._stats["current_available"] -= 1
-                    self._stats["current_in_use"] += 1
-                    self._stats["connections_reused"] += 1
+                    # Mark as in use
+                    pooled.in_use = True
+                    pooled.use_count += 1
+                    pooled.last_used = asyncio.get_event_loop().time()
+
+                    if self.enable_stats:
+                        self._stats["current_available"] -= 1
+                        self._stats["current_in_use"] += 1
+                        self._stats["connections_reused"] += 1
+
+                break
 
             # Yield connection
             yield pooled.connection

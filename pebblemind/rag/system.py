@@ -4,6 +4,8 @@ import asyncio
 import logging
 import sqlite3
 import hashlib
+import json
+import ast
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import numpy as np
@@ -14,6 +16,7 @@ except ImportError:
     SentenceTransformer = None
 
 from ..config import RAGConfig
+from ..performance.connection_pool import ConnectionPool
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ class RAGSystem:
         self.config = config
         self.db_path = Path(config.vector_db_path)
         self.embedding_model = None
+        self.pool = None
         self._initialized = False
 
         # Verify sqlite-vec is available
@@ -49,6 +53,26 @@ class RAGSystem:
 
             # Setup database
             await self._setup_database()
+
+            # Initialize connection pool
+            def create_conn():
+                conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+                conn.row_factory = sqlite3.Row
+                if self.sqlite_vec_available:
+                    conn.enable_load_extension(True)
+                    import sqlite_vec
+                    sqlite_vec.load(conn)
+                    conn.enable_load_extension(False)
+                return conn
+
+            self.pool = ConnectionPool(
+                create_connection=create_conn,
+                close_connection=lambda c: c.close(),
+                health_check=None,  # SQLite connections are local and fast to recreate if needed
+                min_size=1,
+                max_size=5
+            )
+            await self.pool.start()
 
             self._initialized = True
             logger.info("RAG system initialized successfully")
@@ -144,6 +168,20 @@ class RAGSystem:
         """Generate unique document ID from content"""
         return hashlib.md5(content.encode()).hexdigest()
 
+    def _parse_metadata(self, metadata_str: str) -> Dict[str, Any]:
+        """Safely parse metadata from string (handles JSON and legacy str(dict) format)"""
+        if not metadata_str:
+            return {}
+        try:
+            return json.loads(metadata_str)
+        except json.JSONDecodeError:
+            try:
+                # Fallback for legacy format
+                result = ast.literal_eval(metadata_str)
+                return result if isinstance(result, dict) else {}
+            except (ValueError, SyntaxError):
+                return {}
+
     def _chunk_text(self, text: str) -> List[str]:
         """Split text into chunks for embedding"""
         words = text.split()
@@ -171,48 +209,47 @@ class RAGSystem:
         try:
             logger.info(f"Adding {len(documents)} documents to RAG system")
 
-            conn = sqlite3.connect(str(self.db_path))
-            cursor = conn.cursor()
+            async with self.pool.acquire() as conn:
+                cursor = conn.cursor()
 
-            for doc in documents:
-                content = doc.get("content", "")
-                metadata = doc.get("metadata", {})
+                for doc in documents:
+                    content = doc.get("content", "")
+                    metadata = doc.get("metadata", {})
 
-                # Skip empty documents
-                if not content.strip():
-                    continue
+                    # Skip empty documents
+                    if not content.strip():
+                        continue
 
-                # Chunk the document
-                chunks = self._chunk_text(content)
+                    # Chunk the document
+                    chunks = self._chunk_text(content)
 
-                for chunk in chunks:
-                    # Generate embedding
-                    embedding = self.embedding_model.encode([chunk])[0]
+                    for chunk in chunks:
+                        # Generate embedding
+                        embedding = self.embedding_model.encode([chunk])[0]
 
-                    # Generate document ID
-                    doc_id = self._generate_document_id(chunk)
+                        # Generate document ID
+                        doc_id = self._generate_document_id(chunk)
 
-                    # Store in database
-                    if self.sqlite_vec_available:
-                        # Use vector extension
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO documents (id, content, metadata, embedding)
-                            VALUES (?, ?, ?, ?)
-                        """, (doc_id, chunk, str(metadata), embedding.tobytes()))
+                        # Store in database
+                        if self.sqlite_vec_available:
+                            # Use vector extension
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO documents (id, content, metadata, embedding)
+                                VALUES (?, ?, ?, ?)
+                            """, (doc_id, chunk, json.dumps(metadata), embedding.tobytes()))
 
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO documents_vec (id, embedding)
-                            VALUES (?, ?)
-                        """, (doc_id, embedding.astype(np.float32)))
-                    else:
-                        # Store embedding as blob
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO documents (id, content, metadata, embedding)
-                            VALUES (?, ?, ?, ?)
-                        """, (doc_id, chunk, str(metadata), embedding.tobytes()))
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO documents_vec (id, embedding)
+                                VALUES (?, ?)
+                            """, (doc_id, embedding.astype(np.float32)))
+                        else:
+                            # Store embedding as blob
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO documents (id, content, metadata, embedding)
+                                VALUES (?, ?, ?, ?)
+                            """, (doc_id, chunk, json.dumps(metadata), embedding.tobytes()))
 
-            conn.commit()
-            conn.close()
+                conn.commit()
 
             logger.info("Documents added successfully")
 
@@ -229,52 +266,51 @@ class RAGSystem:
             # Generate query embedding
             query_embedding = self.embedding_model.encode([query])[0]
 
-            conn = sqlite3.connect(str(self.db_path))
-            cursor = conn.cursor()
-
             results = []
 
-            if self.sqlite_vec_available:
-                # Use vector search
-                cursor.execute("""
-                    SELECT documents.id, documents.content, documents.metadata,
-                           vec_distance_cosine(documents_vec.embedding, ?) as distance
-                    FROM documents
-                    JOIN documents_vec ON documents.id = documents_vec.id
-                    ORDER BY distance
-                    LIMIT ?
-                """, (query_embedding.astype(np.float32), k))
+            async with self.pool.acquire() as conn:
+                cursor = conn.cursor()
 
-                for row in cursor.fetchall():
-                    doc_id, content, metadata, distance = row
-                    results.append({
-                        "id": doc_id,
-                        "content": content,
-                        "metadata": eval(metadata) if metadata else {},
-                        "score": 1.0 - distance,  # Convert distance to similarity score
-                    })
-            else:
-                # Fallback to simple search (no vector similarity)
-                logger.warning("Vector search not available, using basic text search")
+                if self.sqlite_vec_available:
+                    # Use vector search
+                    cursor.execute("""
+                        SELECT documents.id, documents.content, documents.metadata,
+                               vec_distance_cosine(documents_vec.embedding, ?) as distance
+                        FROM documents
+                        JOIN documents_vec ON documents.id = documents_vec.id
+                        ORDER BY distance
+                        LIMIT ?
+                    """, (query_embedding.astype(np.float32), k))
 
-                cursor.execute("""
-                    SELECT id, content, metadata
-                    FROM documents
-                    WHERE content LIKE ?
-                    LIMIT ?
-                """, (f"%{query}%", k))
+                    for row in cursor.fetchall():
+                        doc_id, content, metadata, distance = row
+                        results.append({
+                            "id": doc_id,
+                            "content": content,
+                            "metadata": self._parse_metadata(metadata),
+                            "score": 1.0 - distance,  # Convert distance to similarity score
+                        })
+                else:
+                    # Fallback to simple search (no vector similarity)
+                    logger.warning("Vector search not available, using basic text search")
 
-                for row in cursor.fetchall():
-                    doc_id, content, metadata = row
-                    results.append({
-                        "id": doc_id,
-                        "content": content,
-                        "metadata": eval(metadata) if metadata else {},
-                        "score": 0.5,  # Default score for fallback
-                    })
+                    cursor.execute("""
+                        SELECT id, content, metadata
+                        FROM documents
+                        WHERE content LIKE ?
+                        LIMIT ?
+                    """, (f"%{query}%", k))
 
-            conn.close()
-            return results
+                    for row in cursor.fetchall():
+                        doc_id, content, metadata = row
+                        results.append({
+                            "id": doc_id,
+                            "content": content,
+                            "metadata": self._parse_metadata(metadata),
+                            "score": 0.5,  # Default score for fallback
+                        })
+
+                return results
 
         except Exception as e:
             logger.error(f"Search failed: {e}")
@@ -286,20 +322,19 @@ class RAGSystem:
             await self.initialize()
 
         try:
-            conn = sqlite3.connect(str(self.db_path))
-            cursor = conn.cursor()
+            async with self.pool.acquire() as conn:
+                cursor = conn.cursor()
 
-            # Delete from both tables
-            cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+                # Delete from both tables
+                cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
 
-            if self.sqlite_vec_available:
-                cursor.execute("DELETE FROM documents_vec WHERE id = ?", (doc_id,))
+                if self.sqlite_vec_available:
+                    cursor.execute("DELETE FROM documents_vec WHERE id = ?", (doc_id,))
 
-            deleted = cursor.rowcount > 0
-            conn.commit()
-            conn.close()
+                deleted = cursor.rowcount > 0
+                conn.commit()
 
-            return deleted
+                return deleted
 
         except Exception as e:
             logger.error(f"Failed to delete document: {e}")
@@ -311,17 +346,15 @@ class RAGSystem:
             await self.initialize()
 
         try:
-            conn = sqlite3.connect(str(self.db_path))
-            cursor = conn.cursor()
+            async with self.pool.acquire() as conn:
+                cursor = conn.cursor()
 
-            # Get document count
-            cursor.execute("SELECT COUNT(*) FROM documents")
-            doc_count = cursor.fetchone()[0]
+                # Get document count
+                cursor.execute("SELECT COUNT(*) FROM documents")
+                doc_count = cursor.fetchone()[0]
 
             # Get database size
             db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
-
-            conn.close()
 
             return {
                 "total_documents": doc_count,
@@ -338,6 +371,10 @@ class RAGSystem:
 
     async def cleanup(self) -> None:
         """Clean up resources"""
+        if self.pool:
+            await self.pool.stop()
+            self.pool = None
+
         if self.embedding_model:
             # Clear embedding model from memory
             self.embedding_model = None
