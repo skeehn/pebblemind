@@ -35,7 +35,7 @@ class RequestBatcher(Generic[T, R]):
 
     def __init__(
         self,
-        batch_processor: Callable[[List[T]], asyncio.coroutine],
+        batch_processor: Callable[[List[T]], Any],
         max_batch_size: int = 32,
         max_wait_ms: int = 50,
         max_concurrent_batches: int = 4,
