@@ -150,3 +150,30 @@ cache/
 models/*.gguf
 models/*.bin
 *.onnx
+
+# Security - Never commit these!
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+secrets.json
+secrets.yaml
+.secret
+.secrets/
+api_keys.txt
+credentials.json
+*.env.local
+*.env.production
+*.env.staging
+
+# SSL Certificates
+ssl/
+certs/
+certificates/
+
+# Backup files (may contain sensitive data)
+*.bak
+*.backup
+*.old
+data.backup/

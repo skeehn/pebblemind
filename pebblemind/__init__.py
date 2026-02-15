@@ -22,7 +22,7 @@ from .config import Config
 # Lazy import to avoid loading heavy dependencies at module import time
 def __getattr__(name):
     if name == "PebbleMind":
-        from .core import PebbleMind
+        from .pebblemind_app import PebbleMind
         return PebbleMind
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

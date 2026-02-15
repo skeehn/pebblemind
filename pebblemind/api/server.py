@@ -4,20 +4,66 @@ import asyncio
 import logging
 import json
 import time
-from typing import Dict, Any, List, Optional
-from datetime import datetime
+from collections import defaultdict
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect, Header, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 import uvicorn
 
-from ..core import PebbleMind
+if TYPE_CHECKING:
+    from ..pebblemind_app import PebbleMind
+
 from ..core.streaming import sse_stream, websocket_stream
 from ..config import APIConfig
 
 logger = logging.getLogger(__name__)
+
+# Security scheme
+security = HTTPBearer(auto_error=False)
+
+
+class RateLimiter:
+    """Simple in-memory rate limiter"""
+
+    def __init__(self, requests_per_minute: int = 60):
+        self.requests_per_minute = requests_per_minute
+        self.requests = defaultdict(list)
+
+    def is_allowed(self, client_id: str) -> bool:
+        """Check if request is allowed"""
+        now = datetime.now()
+        minute_ago = now - timedelta(minutes=1)
+
+        # Clean old requests
+        self.requests[client_id] = [
+            req_time for req_time in self.requests[client_id]
+            if req_time > minute_ago
+        ]
+
+        # Check rate limit
+        if len(self.requests[client_id]) >= self.requests_per_minute:
+            return False
+
+        # Add current request
+        self.requests[client_id].append(now)
+        return True
+
+    def get_retry_after(self, client_id: str) -> int:
+        """Get seconds until rate limit resets"""
+        if not self.requests[client_id]:
+            return 0
+
+        oldest_request = min(self.requests[client_id])
+        retry_time = oldest_request + timedelta(minutes=1)
+        return int((retry_time - datetime.now()).total_seconds())
+
+
+rate_limiter = RateLimiter(requests_per_minute=60)
 
 
 # OpenAI-compatible data models
@@ -73,7 +119,7 @@ class ModelList(BaseModel):
 class APIServer:
     """OpenAI-compatible API server"""
 
-    def __init__(self, config: APIConfig, pebblemind: PebbleMind):
+    def __init__(self, config: APIConfig, pebblemind: "PebbleMind"):
         """Initialize API server with configuration"""
         self.config = config
         self.pebblemind = pebblemind
@@ -82,8 +128,91 @@ class APIServer:
         self._setup_routes()
         self._setup_middleware()
 
+    async def verify_api_key(self, credentials: HTTPAuthorizationCredentials = Depends(security)) -> bool:
+        """Verify API key if authentication is enabled"""
+        # Skip authentication if no API key is configured
+        if not self.config.api_key:
+            return True
+
+        if not credentials:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if credentials.credentials != self.config.api_key:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid API key"
+            )
+
+        return True
+
+    async def check_rate_limit(self, request: Request) -> bool:
+        """Check rate limit for the request"""
+        # Use client IP as identifier
+        client_id = request.client.host
+
+        if not rate_limiter.is_allowed(client_id):
+            retry_after = rate_limiter.get_retry_after(client_id)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Rate limit exceeded. Please try again later.",
+                headers={"Retry-After": str(retry_after)}
+            )
+
+        return True
+
     def _setup_middleware(self):
         """Setup CORS and other middleware"""
+        # Add security headers middleware
+        @self.app.middleware("http")
+        async def add_security_headers(request: Request, call_next):
+            response = await call_next(request)
+
+            # Strict Transport Security (HTTPS only)
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+            # Content Security Policy
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data:; "
+                "connect-src 'self'; "
+                "frame-ancestors 'none'; "
+                "base-uri 'self'; "
+                "form-action 'self'"
+            )
+
+            # Prevent clickjacking
+            response.headers["X-Frame-Options"] = "DENY"
+
+            # Prevent MIME type sniffing
+            response.headers["X-Content-Type-Options"] = "nosniff"
+
+            # XSS Protection (legacy, but still good to have)
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+
+            # Referrer Policy
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+            # Permissions Policy (formerly Feature-Policy)
+            response.headers["Permissions-Policy"] = (
+                "camera=(), microphone=(), geolocation=(), "
+                "payment=(), usb=(), magnetometer=(), "
+                "gyroscope=(), accelerometer=()"
+            )
+
+            # Remove server header for security
+            if "Server" in response.headers:
+                del response.headers["Server"]
+
+            return response
+
+        # Add CORS middleware
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=self.config.cors_origins,
@@ -125,7 +254,12 @@ class APIServer:
                 raise HTTPException(status_code=404, detail="Model not found")
 
         @self.app.post("/v1/chat/completions")
-        async def create_chat_completion(request: ChatCompletionRequest, raw_request: Request):
+        async def create_chat_completion(
+            request: ChatCompletionRequest,
+            raw_request: Request,
+            authenticated: bool = Depends(self.verify_api_key),
+            rate_limited: bool = Depends(self.check_rate_limit)
+        ):
             """Create chat completion (OpenAI-compatible)"""
             try:
                 # Extract user message from the conversation
@@ -199,11 +333,17 @@ class APIServer:
                     )
 
             except Exception as e:
-                logger.error(f"Chat completion failed: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+                logger.error(f"Chat completion failed: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail="Internal server error occurred while processing your request"
+                )
 
         @self.app.post("/v1/audio/transcriptions")
-        async def create_transcription(request: Request):
+        async def create_transcription(
+            request: Request,
+            authenticated: bool = Depends(self.verify_api_key)
+        ):
             """Transcribe audio to text (OpenAI-compatible)"""
             try:
                 # Parse multipart form data
@@ -214,8 +354,29 @@ class APIServer:
                 if not audio_file:
                     raise HTTPException(status_code=400, detail="No audio file provided")
 
-                # Read audio data
+                # Validate file type
+                allowed_audio_types = {
+                    "audio/wav", "audio/wave", "audio/x-wav",
+                    "audio/mp3", "audio/mpeg",
+                    "audio/ogg", "audio/flac"
+                }
+
+                content_type = audio_file.content_type
+                if content_type not in allowed_audio_types:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid file type. Allowed types: {', '.join(allowed_audio_types)}"
+                    )
+
+                # Validate file size (max 25MB)
+                MAX_FILE_SIZE = 25 * 1024 * 1024
                 audio_data = await audio_file.read()
+
+                if len(audio_data) > MAX_FILE_SIZE:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="File too large. Maximum size is 25MB"
+                    )
 
                 # Process with voice processor
                 transcription = await self.pebblemind.voice_processor.speech_to_text(audio_data)
@@ -225,11 +386,17 @@ class APIServer:
                 }
 
             except Exception as e:
-                logger.error(f"Transcription failed: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+                logger.error(f"Transcription failed: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail="Internal server error occurred during transcription"
+                )
 
         @self.app.post("/v1/audio/speech")
-        async def create_speech(request: Request):
+        async def create_speech(
+            request: Request,
+            authenticated: bool = Depends(self.verify_api_key)
+        ):
             """Generate speech from text (OpenAI-compatible)"""
             try:
                 # Parse request body
@@ -253,8 +420,11 @@ class APIServer:
                 )
 
             except Exception as e:
-                logger.error(f"Speech generation failed: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+                logger.error(f"Speech generation failed: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail="Internal server error occurred during speech generation"
+                )
 
         @self.app.websocket("/ws/chat")
         async def websocket_chat(websocket: WebSocket):
@@ -331,13 +501,35 @@ class APIServer:
 
     async def start(self) -> None:
         """Start the API server"""
-        logger.info(f"Starting API server on {self.config.host}:{self.config.port}")
+        protocol = "https" if self.config.enable_https else "http"
+        logger.info(f"Starting API server on {protocol}://{self.config.host}:{self.config.port}")
+
+        # Prepare SSL configuration
+        ssl_keyfile = None
+        ssl_certfile = None
+        ssl_ca_certs = None
+
+        if self.config.enable_https:
+            if not self.config.ssl_cert_path or not self.config.ssl_key_path:
+                raise ValueError(
+                    "HTTPS enabled but SSL certificate or key path not provided. "
+                    "Set ssl_cert_path and ssl_key_path in configuration."
+                )
+
+            ssl_certfile = self.config.ssl_cert_path
+            ssl_keyfile = self.config.ssl_key_path
+            ssl_ca_certs = self.config.ssl_ca_certs
+
+            logger.info(f"HTTPS enabled with certificate: {ssl_certfile}")
 
         config = uvicorn.Config(
             self.app,
             host=self.config.host,
             port=self.config.port,
-            log_level="info"
+            log_level="info",
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile,
+            ssl_ca_certs=ssl_ca_certs
         )
 
         self.server = uvicorn.Server(config)
