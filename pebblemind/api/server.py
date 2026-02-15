@@ -5,7 +5,7 @@ import logging
 import json
 import time
 from collections import defaultdict
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect, Header, status
@@ -15,7 +15,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 import uvicorn
 
-from ..core import PebbleMind
+if TYPE_CHECKING:
+    from ..pebblemind_app import PebbleMind
+
 from ..core.streaming import sse_stream, websocket_stream
 from ..config import APIConfig
 
@@ -117,7 +119,7 @@ class ModelList(BaseModel):
 class APIServer:
     """OpenAI-compatible API server"""
 
-    def __init__(self, config: APIConfig, pebblemind: PebbleMind):
+    def __init__(self, config: APIConfig, pebblemind: "PebbleMind"):
         """Initialize API server with configuration"""
         self.config = config
         self.pebblemind = pebblemind
