@@ -55,6 +55,15 @@ class APIConfig(BaseModel):
     cors_origins: list = Field(default=["*"], description="CORS allowed origins")
     api_key: Optional[str] = Field(default=None, description="API key for authentication")
 
+    # HTTPS/SSL Configuration
+    enable_https: bool = Field(default=False, description="Enable HTTPS/SSL")
+    ssl_cert_path: Optional[str] = Field(default=None, description="Path to SSL certificate file")
+    ssl_key_path: Optional[str] = Field(default=None, description="Path to SSL private key file")
+    ssl_ca_certs: Optional[str] = Field(default=None, description="Path to CA certificates file")
+
+    # Security headers
+    enable_security_headers: bool = Field(default=True, description="Enable security headers")
+
 
 class DesktopConfig(BaseModel):
     """Configuration for desktop application"""

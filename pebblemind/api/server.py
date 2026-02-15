@@ -164,6 +164,52 @@ class APIServer:
 
     def _setup_middleware(self):
         """Setup CORS and other middleware"""
+        # Add security headers middleware
+        @self.app.middleware("http")
+        async def add_security_headers(request: Request, call_next):
+            response = await call_next(request)
+
+            # Strict Transport Security (HTTPS only)
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+            # Content Security Policy
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data:; "
+                "connect-src 'self'; "
+                "frame-ancestors 'none'; "
+                "base-uri 'self'; "
+                "form-action 'self'"
+            )
+
+            # Prevent clickjacking
+            response.headers["X-Frame-Options"] = "DENY"
+
+            # Prevent MIME type sniffing
+            response.headers["X-Content-Type-Options"] = "nosniff"
+
+            # XSS Protection (legacy, but still good to have)
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+
+            # Referrer Policy
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+            # Permissions Policy (formerly Feature-Policy)
+            response.headers["Permissions-Policy"] = (
+                "camera=(), microphone=(), geolocation=(), "
+                "payment=(), usb=(), magnetometer=(), "
+                "gyroscope=(), accelerometer=()"
+            )
+
+            # Remove server header for security
+            response.headers.pop("Server", None)
+
+            return response
+
+        # Add CORS middleware
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=self.config.cors_origins,
@@ -452,13 +498,35 @@ class APIServer:
 
     async def start(self) -> None:
         """Start the API server"""
-        logger.info(f"Starting API server on {self.config.host}:{self.config.port}")
+        protocol = "https" if self.config.enable_https else "http"
+        logger.info(f"Starting API server on {protocol}://{self.config.host}:{self.config.port}")
+
+        # Prepare SSL configuration
+        ssl_keyfile = None
+        ssl_certfile = None
+        ssl_ca_certs = None
+
+        if self.config.enable_https:
+            if not self.config.ssl_cert_path or not self.config.ssl_key_path:
+                raise ValueError(
+                    "HTTPS enabled but SSL certificate or key path not provided. "
+                    "Set ssl_cert_path and ssl_key_path in configuration."
+                )
+
+            ssl_certfile = self.config.ssl_cert_path
+            ssl_keyfile = self.config.ssl_key_path
+            ssl_ca_certs = self.config.ssl_ca_certs
+
+            logger.info(f"HTTPS enabled with certificate: {ssl_certfile}")
 
         config = uvicorn.Config(
             self.app,
             host=self.config.host,
             port=self.config.port,
-            log_level="info"
+            log_level="info",
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile,
+            ssl_ca_certs=ssl_ca_certs
         )
 
         self.server = uvicorn.Server(config)
