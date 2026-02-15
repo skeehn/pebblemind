@@ -118,8 +118,10 @@ class LongTermMemory:
         
         if tags:
             # Search for memories containing any of the specified tags
+            # Use parameterized queries to prevent SQL injection
             for tag in tags:
-                sql += f" AND tags LIKE '%{tag}%'"
+                sql += " AND tags LIKE ?"
+                params.append(f"%{tag}%")
         
         if importance_threshold > 0:
             sql += " AND importance >= ?"
