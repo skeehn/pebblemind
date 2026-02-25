@@ -184,24 +184,24 @@ Final Answer: Water boils at a lower temperature at high altitude because atmosp
                     "answer": "lower"
                 },
                 {
-                    "question": "A ball is thrown straight up in the air. At the very top of its path, what is its velocity?",
+                    "question": "A ball is thrown straight up in the air. At the very top of its path, what is its speed?",
                     "reasoning": """Let's think through this step by step:
 
 Step 1: Understand the motion.
-- The ball is thrown upward with some initial velocity.
-- Gravity constantly accelerates it downward at ~9.8 m/s².
+- The ball is thrown upward with some initial speed.
+- Gravity constantly decelerates it at ~9.8 m/s².
 
 Step 2: Analyze what happens as it rises.
 - As the ball goes up, gravity slows it down.
-- Its upward velocity decreases continuously.
+- Its upward speed decreases continuously.
 
 Step 3: Consider the top of the path.
 - At the very top, the ball momentarily stops before falling back down.
-- Its upward velocity has been fully reduced to zero by gravity.
+- Its speed has been fully reduced to zero by gravity.
 - It has not yet started moving downward.
 
 Step 4: State the answer.
-- At the top of its path, the ball's velocity is zero.
+- At the top of its path, the ball's speed is zero.
 
 Final Answer: Zero (0 m/s). The ball momentarily stops at the peak.""",
                     "answer": "zero"
