@@ -415,8 +415,9 @@ class TestRAGSystem:
 
             # Mock the embedding model to avoid network downloads
             mock_model = MagicMock()
+            rng = np.random.RandomState(42)
             def mock_encode(texts):
-                return np.random.rand(len(texts), 384).astype(np.float32)
+                return rng.rand(len(texts), 384).astype(np.float32)
             mock_model.encode = mock_encode
 
             with patch.object(rag, '_setup_embedding_model', new_callable=AsyncMock) as mock_setup:
@@ -445,6 +446,7 @@ class TestRAGSystem:
             results = await rag.search("What is Python?", k=2)
 
             assert len(results) > 0
+            assert all("content" in r and "metadata" in r for r in results)
 
             # Get stats
             stats = await rag.get_stats()

@@ -110,7 +110,8 @@ class LongTermMemory:
         
         if query:
             # Split query into significant words for word-level matching
-            words = [w for w in query.split() if len(w) >= 3]
+            min_word_length = 3
+            words = [w for w in query.split() if len(w) >= min_word_length]
             if words:
                 word_clauses = " OR ".join(["content LIKE ?" for _ in words])
                 sql += f" AND ({word_clauses})"
