@@ -100,6 +100,7 @@ class TestLLMEngine:
         assert isinstance(result, bool)
 
     @pytest.mark.asyncio
+    @patch('pebblemind.core.llm.Llama', None)
     async def test_initialize_without_llama_cpp(self, llm_config):
         """Test initialization fails gracefully without llama-cpp-python"""
         engine = LLMEngine(llm_config)

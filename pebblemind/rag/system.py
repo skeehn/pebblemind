@@ -288,7 +288,7 @@ class RAGSystem:
                             "id": doc_id,
                             "content": content,
                             "metadata": self._parse_metadata(metadata),
-                            "score": 1.0 - distance,  # Convert distance to similarity score
+                            "score": 1.0 - distance if distance is not None else 0.0,
                         })
                 else:
                     # Fallback to simple search (no vector similarity)

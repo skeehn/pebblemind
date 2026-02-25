@@ -31,6 +31,11 @@ async def test_metadata_security_and_format(rag_system):
     def create_conn():
         conn = sqlite3.connect(str(rag_system.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        if rag_system.sqlite_vec_available:
+            conn.enable_load_extension(True)
+            import sqlite_vec
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
         return conn
 
     rag_system.pool = ConnectionPool(
