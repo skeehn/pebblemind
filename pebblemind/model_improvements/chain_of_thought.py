@@ -158,7 +158,55 @@ Step 4: print(x)
 Final Answer: [1, 2, 3, 4]""",
                     "answer": "[1, 2, 3, 4]"
                 }
-            ]
+            ],
+            "science": [
+                {
+                    "question": "Water boils at 100°C at sea level. If you are on a mountain at high altitude, will water boil at a higher or lower temperature? Explain why.",
+                    "reasoning": """Let's think through this step by step:
+
+Step 1: Understand the relationship between pressure and boiling point.
+- Boiling occurs when vapor pressure equals atmospheric pressure.
+- At sea level, atmospheric pressure is about 101.3 kPa.
+
+Step 2: Consider what happens at high altitude.
+- At higher altitudes, there is less atmosphere above you.
+- This means atmospheric pressure is lower.
+
+Step 3: Apply the relationship.
+- With lower atmospheric pressure, the vapor pressure needed to boil is lower.
+- Therefore water reaches its boiling point at a lower temperature.
+
+Step 4: Conclude.
+- Water boils at a LOWER temperature at high altitude.
+- For example, at the top of Mount Everest (~8,849m), water boils at about 70°C.
+
+Final Answer: Water boils at a lower temperature at high altitude because atmospheric pressure is reduced.""",
+                    "answer": "lower"
+                },
+                {
+                    "question": "A ball is thrown straight up in the air. At the very top of its path, what is its speed?",
+                    "reasoning": """Let's think through this step by step:
+
+Step 1: Understand the motion.
+- The ball is thrown upward with some initial speed.
+- Gravity constantly decelerates it at ~9.8 m/s².
+
+Step 2: Analyze what happens as it rises.
+- As the ball goes up, gravity slows it down.
+- Its upward speed decreases continuously.
+
+Step 3: Consider the top of the path.
+- At the very top, the ball momentarily stops before falling back down.
+- Its speed has been fully reduced to zero by gravity.
+- It has not yet started moving downward.
+
+Step 4: State the answer.
+- At the top of its path, the ball's speed is zero.
+
+Final Answer: Zero (0 m/s). The ball momentarily stops at the peak.""",
+                    "answer": "zero"
+                }
+            ],
         }
 
     def enhance_prompt_zero_shot(

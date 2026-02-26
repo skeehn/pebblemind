@@ -494,5 +494,273 @@ def test_add_custom_benchmark():
     assert "custom_test" in evaluator.get_benchmark_names()
 
 
+# ========== Expanded Benchmark Tests ==========
+
+def test_expanded_benchmarks():
+    """Test that expanded benchmark suites have multiple examples"""
+    evaluator = get_evaluator()
+
+    benchmarks = evaluator.get_benchmark_names()
+
+    # Verify new benchmark categories exist
+    assert "knowledge" in benchmarks
+    assert "reading_comprehension" in benchmarks
+
+    # Verify expanded math benchmark has more examples
+    math_examples = evaluator.benchmarks["math"]
+    assert len(math_examples) >= 5, f"Expected >=5 math examples, got {len(math_examples)}"
+
+    # Verify expanded reasoning benchmark has more examples
+    reasoning_examples = evaluator.benchmarks["reasoning"]
+    assert len(reasoning_examples) >= 3, f"Expected >=3 reasoning examples, got {len(reasoning_examples)}"
+
+    # Verify knowledge benchmark
+    knowledge_examples = evaluator.benchmarks["knowledge"]
+    assert len(knowledge_examples) >= 3
+
+    # Verify reading comprehension benchmark
+    rc_examples = evaluator.benchmarks["reading_comprehension"]
+    assert len(rc_examples) >= 2
+
+
+@pytest.mark.asyncio
+async def test_evaluate_knowledge_benchmark():
+    """Test evaluation on knowledge benchmark"""
+    evaluator = get_evaluator()
+
+    async def mock_knowledge_model(prompt, **kwargs):
+        if "chemical symbol" in prompt.lower():
+            return "The chemical symbol for water is H2O."
+        elif "closest to the sun" in prompt.lower():
+            return "Mercury is the closest planet to the Sun."
+        elif "capital of france" in prompt.lower():
+            return "The capital of France is Paris."
+        elif "hexagon" in prompt.lower():
+            return "A hexagon has 6 sides."
+        elif "web browsers" in prompt.lower():
+            return "JavaScript is known for its use in web browsers."
+        return "I don't know."
+
+    result = await evaluator.evaluate(
+        mock_knowledge_model,
+        benchmark_name="knowledge"
+    )
+
+    assert result.examples_tested == 5
+    assert result.passed >= 4  # Good mock should get most right
+
+
+@pytest.mark.asyncio
+async def test_evaluate_reading_comprehension():
+    """Test evaluation on reading comprehension benchmark"""
+    evaluator = get_evaluator()
+
+    async def mock_rc_model(prompt, **kwargs):
+        if "who created python" in prompt.lower():
+            return "Guido van Rossum created Python."
+        elif "deep learning" in prompt.lower() and "machine learning" in prompt.lower():
+            return "Yes, deep learning is a type of machine learning."
+        elif "how long" in prompt.lower() and "orbit" in prompt.lower():
+            return "One orbit takes approximately 365.25 days."
+        return "I don't know."
+
+    result = await evaluator.evaluate(
+        mock_rc_model,
+        benchmark_name="reading_comprehension"
+    )
+
+    assert result.examples_tested == 3
+    assert result.passed >= 2
+
+
+# ========== AI Baseline Comparison Tests ==========
+
+def test_ai_baseline_scores():
+    """Test that AI baseline scores are available and well-structured"""
+    evaluator = get_evaluator()
+
+    baselines = evaluator.get_ai_baseline_scores()
+
+    # Verify key models are present
+    assert "GPT-4" in baselines
+    assert "GPT-3.5-Turbo" in baselines
+    assert "Llama-2-7B" in baselines
+
+    # Verify scores are in valid range [0, 1]
+    for model_name, scores in baselines.items():
+        for bench_name, score in scores.items():
+            assert 0.0 <= score <= 1.0, (
+                f"{model_name}/{bench_name} score {score} out of range"
+            )
+
+    # Verify GPT-4 scores higher than Llama-2-7B across all benchmarks
+    for bench_name in baselines["GPT-4"]:
+        if bench_name in baselines["Llama-2-7B"]:
+            assert baselines["GPT-4"][bench_name] > baselines["Llama-2-7B"][bench_name], (
+                f"GPT-4 should beat Llama-2-7B on {bench_name}"
+            )
+
+
+@pytest.mark.asyncio
+async def test_compare_against_ai_baselines():
+    """Test comparing model output against AI baselines"""
+    evaluator = get_evaluator()
+
+    async def mock_model(prompt, **kwargs):
+        # A decent mock model that gets some answers right
+        if "15 + 27" in prompt:
+            return "42"
+        elif "17 * 23" in prompt:
+            return "391"
+        elif "120 km" in prompt:
+            return "60 km/h"
+        elif "48 apples" in prompt:
+            return "21 apples"
+        elif "144 / 12" in prompt:
+            return "12"
+        elif "area" in prompt.lower():
+            return "40 square cm"
+        elif "$25 per week" in prompt:
+            return "$200"
+        elif "3^4" in prompt or "3 to the power" in prompt:
+            return "81"
+        return "I don't know"
+
+    comparison = await evaluator.compare_against_ai_baselines(
+        mock_model,
+        benchmark_names=["math"]
+    )
+
+    # Verify comparison structure
+    assert "our_model" in comparison
+    assert "baselines" in comparison
+    assert "rankings" in comparison
+
+    # Verify our model's scores are present
+    assert "math" in comparison["our_model"]["scores"]
+    our_math_score = comparison["our_model"]["scores"]["math"]
+    assert 0.0 <= our_math_score <= 1.0
+
+    # Verify ranking includes our model
+    math_ranking = comparison["rankings"]["math"]
+    our_entry = [r for r in math_ranking if r["model"] == "PebbleMind (ours)"]
+    assert len(our_entry) == 1
+    assert our_entry[0]["rank"] >= 1
+
+    # Verify ranking includes baseline models
+    model_names = [r["model"] for r in math_ranking]
+    assert "GPT-4" in model_names
+
+
+@pytest.mark.asyncio
+async def test_compare_baselines_multiple_benchmarks():
+    """Test AI baseline comparison across multiple benchmarks"""
+    evaluator = get_evaluator()
+
+    async def mock_model(prompt, **kwargs):
+        if "15 + 27" in prompt:
+            return "42"
+        elif "roses" in prompt.lower():
+            return "No, we cannot conclude that."
+        elif "cats" in prompt.lower() and "water" in prompt.lower():
+            return "Yes, all cats need water."
+        return "I'm not sure"
+
+    comparison = await evaluator.compare_against_ai_baselines(
+        mock_model,
+        benchmark_names=["math", "reasoning"]
+    )
+
+    # Both benchmarks should have rankings
+    assert "math" in comparison["rankings"]
+    assert "reasoning" in comparison["rankings"]
+
+
+# ========== New CoT Domain Tests ==========
+
+def test_science_few_shot_enhancement():
+    """Test few-shot CoT enhancement with science domain"""
+    engine = get_cot_engine()
+
+    question = "Why does ice float on water?"
+    messages = engine.enhance_prompt_few_shot(question, domain="science")
+
+    assert len(messages) >= 3  # At least 2 examples + question
+    # Verify science examples are used
+    assert any("boil" in msg["content"].lower() or "temperature" in msg["content"].lower()
+               for msg in messages)
+    assert any("step" in msg["content"].lower() for msg in messages)
+
+
+# ========== New Prompt Template Tests ==========
+
+def test_code_explanation_template():
+    """Test that CODE_EXPLANATION template exists and is well-formed"""
+    library = get_template_library()
+
+    template = library.get_template(TaskType.CODE_EXPLANATION)
+    assert template is not None
+    assert "explain" in template.system_prompt.lower() or "educator" in template.system_prompt.lower()
+
+    messages = library.build_messages(
+        TaskType.CODE_EXPLANATION,
+        language="Python",
+        code="x = 42",
+        level="beginner",
+        include_examples=False
+    )
+    assert len(messages) >= 2
+    assert messages[0]["role"] == "system"
+    assert "python" in messages[-1]["content"].lower()
+
+
+def test_technical_writing_template():
+    """Test that TECHNICAL_WRITING template exists and is well-formed"""
+    library = get_template_library()
+
+    template = library.get_template(TaskType.TECHNICAL_WRITING)
+    assert template is not None
+    assert "technical" in template.system_prompt.lower()
+
+    messages = library.build_messages(
+        TaskType.TECHNICAL_WRITING,
+        topic="API Documentation",
+        audience="developers",
+        format="markdown",
+        requirements="Include examples",
+        include_examples=False
+    )
+    assert len(messages) >= 2
+
+
+def test_translation_template():
+    """Test that TRANSLATION template exists and is well-formed"""
+    library = get_template_library()
+
+    template = library.get_template(TaskType.TRANSLATION)
+    assert template is not None
+    assert "translat" in template.system_prompt.lower()
+
+
+def test_instruction_following_template():
+    """Test that INSTRUCTION_FOLLOWING template exists and is well-formed"""
+    library = get_template_library()
+
+    template = library.get_template(TaskType.INSTRUCTION_FOLLOWING)
+    assert template is not None
+    assert "instruction" in template.system_prompt.lower()
+
+
+def test_all_task_types_have_templates():
+    """Test that every TaskType enum value has a corresponding template"""
+    library = get_template_library()
+
+    for task_type in TaskType:
+        template = library.get_template(task_type)
+        assert template is not None, f"Missing template for {task_type.name}"
+        assert len(template.system_prompt) > 0, f"Empty system prompt for {task_type.name}"
+        assert len(template.user_template) > 0, f"Empty user template for {task_type.name}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

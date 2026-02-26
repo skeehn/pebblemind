@@ -109,8 +109,16 @@ class LongTermMemory:
         params = []
         
         if query:
-            sql += " AND content LIKE ?"
-            params.append(f"%{query}%")
+            # Split query into significant words for word-level matching
+            min_word_length = 3
+            words = [w for w in query.split() if len(w) >= min_word_length]
+            if words:
+                word_clauses = " OR ".join(["content LIKE ?" for _ in words])
+                sql += f" AND ({word_clauses})"
+                params.extend([f"%{w}%" for w in words])
+            else:
+                sql += " AND content LIKE ?"
+                params.append(f"%{query}%")
         
         if memory_type:
             sql += " AND memory_type = ?"
