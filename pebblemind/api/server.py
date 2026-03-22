@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import json
+import inspect
 import time
 from collections import defaultdict
 from typing import Dict, Any, List, Optional, TYPE_CHECKING, Tuple
@@ -202,18 +203,74 @@ class APIServer:
 
     async def _prepare_stream_inputs(self, message: str) -> Tuple[str, List[str]]:
         """Prepare streaming inputs using the default PebbleMind query-preparation settings."""
-        prepare_inputs = getattr(type(self.pebblemind), "prepare_generation_inputs", None)
+        prepare_inputs = None
+        if "prepare_generation_inputs" in getattr(self.pebblemind, "__dict__", {}):
+            prepare_inputs = self.pebblemind.__dict__["prepare_generation_inputs"]
+        elif hasattr(type(self.pebblemind), "prepare_generation_inputs"):
+            prepare_inputs = getattr(self.pebblemind, "prepare_generation_inputs")
         if prepare_inputs is None:
             return message, []
 
-        return await prepare_inputs(
-            self.pebblemind,
+        prepared = prepare_inputs(
             message,
             use_rag=True,
             enhance_reasoning=True,
             reasoning_type="analytical",
             use_memory=True,
         )
+        if inspect.isawaitable(prepared):
+            return await prepared
+        return prepared
+
+    async def _finalize_stream_interaction(
+        self,
+        message: str,
+        response: str,
+        start_time: float,
+    ) -> None:
+        """Apply PebbleMind post-generation side effects for completed streams."""
+        finalize_interaction = None
+        if "finalize_interaction" in getattr(self.pebblemind, "__dict__", {}):
+            finalize_interaction = self.pebblemind.__dict__["finalize_interaction"]
+        elif hasattr(type(self.pebblemind), "finalize_interaction"):
+            finalize_interaction = getattr(self.pebblemind, "finalize_interaction")
+        if finalize_interaction is None:
+            return
+
+        finalized = finalize_interaction(
+            message,
+            response,
+            use_memory=True,
+            learn_from_interaction=True,
+            memory_importance=0.6,
+            start_time=start_time,
+        )
+        if inspect.isawaitable(finalized):
+            await finalized
+
+    async def _record_stream_error(
+        self,
+        message: str,
+        error: Exception,
+        start_time: float,
+    ) -> None:
+        """Allow PebbleMind to learn from streaming failures."""
+        record_interaction_error = None
+        if "record_interaction_error" in getattr(self.pebblemind, "__dict__", {}):
+            record_interaction_error = self.pebblemind.__dict__["record_interaction_error"]
+        elif hasattr(type(self.pebblemind), "record_interaction_error"):
+            record_interaction_error = getattr(self.pebblemind, "record_interaction_error")
+        if record_interaction_error is None:
+            return
+
+        recorded = record_interaction_error(
+            message,
+            error,
+            learn_from_interaction=True,
+            start_time=start_time,
+        )
+        if inspect.isawaitable(recorded):
+            await recorded
 
     def _setup_middleware(self):
         """Setup CORS and other middleware"""
@@ -493,6 +550,7 @@ class APIServer:
 
             await websocket.accept()
             listener = None
+            start_time = time.time()
             try:
                 data = await websocket.receive_json()
                 message = data.get("message", "").strip()
@@ -524,6 +582,8 @@ class APIServer:
                 listener = asyncio.create_task(cancel_listener())
 
                 message, context = await self._prepare_stream_inputs(message)
+                accumulated_response: List[str] = []
+                stream_error: Optional[Exception] = None
                 generator = self.pebblemind.llm_engine.generate_stream(
                     message,
                     context=context,
@@ -532,11 +592,30 @@ class APIServer:
                     **gen_params
                 )
 
-                await websocket_stream(websocket, generator, stop_event)
+                async def tracked_generator():
+                    nonlocal stream_error
+                    try:
+                        async for chunk in generator:
+                            accumulated_response.append(chunk)
+                            yield chunk
+                    except Exception as exc:
+                        stream_error = exc
+                        raise
+
+                await websocket_stream(websocket, tracked_generator(), stop_event)
+                if stream_error is not None:
+                    await self._record_stream_error(message, stream_error, start_time)
+                elif not stop_event.is_set():
+                    await self._finalize_stream_interaction(
+                        message,
+                        "".join(accumulated_response),
+                        start_time,
+                    )
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected")
             except Exception as e:
                 logger.error(f"WebSocket chat failed: {e}", exc_info=True)
+                await self._record_stream_error(message, e, start_time)
                 try:
                     await websocket.send_json(websocket_internal_error(str(e)))
                 except WebSocketDisconnect:
@@ -560,15 +639,20 @@ class APIServer:
     ):
         """Stream chat completion response"""
         stop_event = asyncio.Event()
+        start_time = time.time()
 
         async def disconnect_watcher():
-            if await raw_request.is_disconnected():
-                stop_event.set()
+            while not stop_event.is_set():
+                if await raw_request.is_disconnected():
+                    stop_event.set()
+                    break
+                await asyncio.sleep(0.05)
 
         watcher_task = asyncio.create_task(disconnect_watcher())
 
         try:
             message, context = await self._prepare_stream_inputs(message)
+            accumulated_response: List[str] = []
             generator = self.pebblemind.llm_engine.generate_stream(
                 message,
                 context=context,
@@ -576,10 +660,23 @@ class APIServer:
                 stop_event=stop_event,
                 **kwargs
             )
-            async for chunk in sse_stream(generator, model, raw_request):
+
+            async def tracked_generator():
+                async for token in generator:
+                    accumulated_response.append(token)
+                    yield token
+
+            async for chunk in sse_stream(tracked_generator(), model, raw_request):
                 yield chunk
+            if not stop_event.is_set():
+                await self._finalize_stream_interaction(
+                    message,
+                    "".join(accumulated_response),
+                    start_time,
+                )
         except Exception as e:
             logger.error(f"Streaming failed: {e}")
+            await self._record_stream_error(message, e, start_time)
             error_data = {"error": {"message": str(e), "type": "internal_error"}}
             yield f"data: {json.dumps(error_data)}\n\n"
         finally:

@@ -1,11 +1,15 @@
 """External Services Integration for PebbleMind"""
 
 import asyncio
-import aiohttp
 import json
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
 import sqlite3
+
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 
 
 class ExternalServiceConnector:
@@ -110,6 +114,8 @@ class ExternalServiceConnector:
                           data: Optional[Union[Dict[str, Any], str]] = None) -> Dict[str, Any]:
         """Make a call to a REST API"""
         try:
+            if aiohttp is None:
+                raise ImportError("aiohttp is required for REST API integrations")
             if headers is None:
                 headers = {}
             
@@ -181,6 +187,8 @@ class ExternalServiceConnector:
     async def connect_to_weather_service(self, api_key: str) -> Dict[str, Any]:
         """Connect to a weather service (OpenWeatherMap as example)"""
         try:
+            if aiohttp is None:
+                raise ImportError("aiohttp is required for weather service integrations")
             # Test the API key by making a simple request
             url = f"http://api.openweathermap.org/data/2.5/weather?q=London&appid={api_key}&units=metric"
             
@@ -216,6 +224,8 @@ class ExternalServiceConnector:
             }
         
         try:
+            if aiohttp is None:
+                raise ImportError("aiohttp is required for weather service integrations")
             api_key = self.service_configs["weather"]["api_key"]
             url = f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&units=metric"
             

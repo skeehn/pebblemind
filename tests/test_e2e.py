@@ -298,7 +298,7 @@ class TestAPIEndToEnd:
             from fastapi.testclient import TestClient
             from pebblemind.api.server import APIServer
             from pebblemind.config import APIConfig
-            from unittest.mock import Mock
+            from unittest.mock import Mock, AsyncMock
 
             captured = {}
 
@@ -312,6 +312,7 @@ class TestAPIEndToEnd:
                 def __init__(self):
                     self.llm_engine = Mock()
                     self.llm_engine.generate_stream = mock_stream
+                    self.finalize_interaction = AsyncMock()
 
                 async def prepare_generation_inputs(self, message, **kwargs):
                     return f"Enhanced: {message}", ["RAG context", "Memory context"]
@@ -336,8 +337,58 @@ class TestAPIEndToEnd:
             assert captured["message"] == "Enhanced: Hello"
             assert captured["context"] == ["RAG context", "Memory context"]
             assert captured["system_prompt"] == "Be helpful"
+            server.pebblemind.finalize_interaction.assert_awaited_once()
+            finalize_call = server.pebblemind.finalize_interaction.await_args
+            assert finalize_call.args[:2] == ("Enhanced: Hello", "Hello")
 
             print("✓ Streaming chat uses prepared query inputs")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_streaming_chat_completion_records_stream_errors_for_learning(self):
+        """Test streaming HTTP chat reports generation failures to PebbleMind learning hooks"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock, AsyncMock
+
+            async def mock_stream(*args, **kwargs):
+                if False:
+                    yield ""
+                raise RuntimeError("stream failed")
+
+            class FakePebbleMind:
+                def __init__(self):
+                    self.llm_engine = Mock()
+                    self.llm_engine.generate_stream = mock_stream
+                    self.record_interaction_error = AsyncMock()
+
+                async def prepare_generation_inputs(self, message, **kwargs):
+                    return message, []
+
+            config = APIConfig()
+            server = APIServer(config, FakePebbleMind())
+
+            client = TestClient(server.app)
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "pebblemind-chat",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": True,
+                },
+            )
+
+            assert response.status_code == 200
+            server.pebblemind.record_interaction_error.assert_awaited_once()
+            error_call = server.pebblemind.record_interaction_error.await_args
+            assert error_call.args[0] == "Hello"
+            assert str(error_call.args[1]) == "stream failed"
+
+            print("✓ Streaming chat records generation errors")
 
         except ImportError:
             pytest.skip("API dependencies not available")
@@ -381,7 +432,7 @@ class TestAPIEndToEnd:
             from fastapi.testclient import TestClient
             from pebblemind.api.server import APIServer
             from pebblemind.config import APIConfig
-            from unittest.mock import Mock
+            from unittest.mock import Mock, AsyncMock
 
             captured = {}
 
@@ -396,6 +447,7 @@ class TestAPIEndToEnd:
                 def __init__(self):
                     self.llm_engine = Mock()
                     self.llm_engine.generate_stream = mock_stream
+                    self.finalize_interaction = AsyncMock()
 
                 async def prepare_generation_inputs(self, message, **kwargs):
                     return f"Enhanced: {message}", ["RAG context", "Memory context"]
@@ -413,8 +465,55 @@ class TestAPIEndToEnd:
             assert captured["context"] == ["RAG context", "Memory context"]
             assert captured["system_prompt"] == "Be helpful"
             assert captured["stop_event"] is not None
+            server.pebblemind.finalize_interaction.assert_awaited_once()
+            finalize_call = server.pebblemind.finalize_interaction.await_args
+            assert finalize_call.args[:2] == ("Enhanced: Hello", "Hello")
 
             print("✓ WebSocket chat uses prepared query inputs")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_websocket_chat_records_stream_errors_for_learning(self):
+        """Test WebSocket chat reports generation failures to PebbleMind learning hooks"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock, AsyncMock
+
+            async def mock_stream(*args, **kwargs):
+                if False:
+                    yield ""
+                raise RuntimeError("stream failed")
+
+            class FakePebbleMind:
+                def __init__(self):
+                    self.llm_engine = Mock()
+                    self.llm_engine.generate_stream = mock_stream
+                    self.record_interaction_error = AsyncMock()
+
+                async def prepare_generation_inputs(self, message, **kwargs):
+                    return message, []
+
+            config = APIConfig()
+            server = APIServer(config, FakePebbleMind())
+
+            client = TestClient(server.app)
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_json({"message": "Hello"})
+                assert websocket.receive_json() == {
+                    "error": {"message": "stream failed", "type": "internal_error"}
+                }
+                assert websocket.receive_json() == {"event": "done"}
+
+            server.pebblemind.record_interaction_error.assert_awaited_once()
+            error_call = server.pebblemind.record_interaction_error.await_args
+            assert error_call.args[0] == "Hello"
+            assert str(error_call.args[1]) == "stream failed"
+
+            print("✓ WebSocket chat records generation errors")
 
         except ImportError:
             pytest.skip("API dependencies not available")
@@ -894,6 +993,42 @@ class TestPebbleMindQueryIntegration:
         )
 
         print("✓ Query uses RAG without explicit context")
+
+    @pytest.mark.asyncio
+    async def test_initialize_disables_optional_components_when_optional_imports_fail(self, tmp_path):
+        """Test PebbleMind initialization degrades gracefully when optional components are unavailable"""
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from pebblemind.config import Config
+        from pebblemind.pebblemind_app import PebbleMind
+
+        config = Config(
+            data_dir=str(tmp_path / "data"),
+            cache_dir=str(tmp_path / "cache"),
+        )
+
+        def fake_import(module_name, package=None):
+            if module_name in {".voice", ".rag", ".api"}:
+                raise ImportError(f"missing optional dependency for {module_name}")
+            raise AssertionError(f"Unexpected import attempted: {module_name}")
+
+        mock_llm_engine = Mock()
+        mock_llm_engine.initialize = AsyncMock()
+
+        with patch("pebblemind.pebblemind_app.LLMEngine", return_value=mock_llm_engine), patch(
+            "pebblemind.pebblemind_app.import_module",
+            side_effect=fake_import,
+        ):
+            mind = PebbleMind(config)
+            await mind.initialize()
+
+        assert mind._initialized is True
+        assert mind.llm_engine is mock_llm_engine
+        assert mind.voice_processor is None
+        assert mind.rag_system is None
+        assert mind.api_server is None
+
+        print("✓ Optional component import failures disable features without aborting init")
 
 
 class TestMemorySystem:
