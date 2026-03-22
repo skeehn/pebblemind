@@ -95,7 +95,7 @@ class Config(BaseModel):
         with open(config_path, 'r') as f:
             data = yaml.safe_load(f)
 
-        return cls(**data)
+        return cls(**(data or {}))
 
     @classmethod
     def from_env(cls) -> "Config":

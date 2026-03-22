@@ -170,6 +170,28 @@ class TestRAGSystem:
 
     @pytest.mark.asyncio
     @patch('pebblemind.rag.system.SentenceTransformer')
+    async def test_search_fallback_matches_query_keywords(self, mock_st_class, rag_config, mock_sentence_transformer):
+        """Test fallback text search matches normalized query keywords"""
+        mock_st_class.return_value = mock_sentence_transformer
+
+        rag = RAGSystem(rag_config)
+        rag.sqlite_vec_available = False
+        await rag.initialize()
+
+        documents = [
+            {"content": "Python is a high-level programming language", "metadata": {"topic": "python"}},
+            {"content": "JavaScript is used for web development", "metadata": {"topic": "javascript"}},
+        ]
+        await rag.add_documents(documents)
+
+        results = await rag.search("What is Python?", k=2)
+
+        assert len(results) > 0
+        assert "Python" in results[0]["content"]
+        assert results[0]["metadata"]["topic"] == "python"
+
+    @pytest.mark.asyncio
+    @patch('pebblemind.rag.system.SentenceTransformer')
     async def test_delete_document(self, mock_st_class, rag_config, mock_sentence_transformer):
         """Test document deletion"""
         mock_st_class.return_value = mock_sentence_transformer

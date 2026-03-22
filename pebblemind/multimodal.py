@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Multi-modal Capabilities for PebbleMind - Image Processing"""
 
 import asyncio
@@ -11,6 +13,7 @@ try:
     from PIL import Image
     PIL_AVAILABLE = True
 except ImportError:
+    Image = Any
     PIL_AVAILABLE = False
 
 try:

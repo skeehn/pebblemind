@@ -1,10 +1,14 @@
 """Performance monitoring and efficiency tracking for PebbleMind"""
 
 import time
-import psutil
 import asyncio
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 
 @dataclass
@@ -38,12 +42,17 @@ class PerformanceMonitor:
     ) -> PerformanceMetrics:
         """Capture current system and performance metrics"""
         current_time = time.time()
-        
-        # Get system metrics
-        cpu_percent = psutil.cpu_percent(interval=None)
-        memory_info = psutil.virtual_memory()
-        memory_mb = memory_info.used / (1024 * 1024)
-        memory_percent = memory_info.percent
+
+        # Get system metrics if psutil is available
+        if psutil is not None:
+            cpu_percent = psutil.cpu_percent(interval=None)
+            memory_info = psutil.virtual_memory()
+            memory_mb = memory_info.used / (1024 * 1024)
+            memory_percent = memory_info.percent
+        else:
+            cpu_percent = 0.0
+            memory_mb = 0.0
+            memory_percent = 0.0
         
         # Calculate tokens per second
         tokens_per_second = tokens_processed / generation_time if generation_time > 0 else 0

@@ -3,9 +3,12 @@
 import asyncio
 import logging
 import json
+import inspect
 import time
+from email.parser import BytesParser
+from email.policy import default as email_policy
 from collections import defaultdict
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, TYPE_CHECKING, Tuple
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect, Header, status
@@ -18,10 +21,11 @@ import uvicorn
 if TYPE_CHECKING:
     from ..pebblemind_app import PebbleMind
 
-from ..core.streaming import sse_stream, websocket_stream
+from ..core.streaming import sse_stream, websocket_stream, websocket_internal_error
 from ..config import APIConfig
 
 logger = logging.getLogger(__name__)
+DISCONNECT_POLL_INTERVAL = 0.05
 
 # Security scheme
 security = HTTPBearer(auto_error=False)
@@ -128,20 +132,19 @@ class APIServer:
         self._setup_routes()
         self._setup_middleware()
 
-    async def verify_api_key(self, credentials: HTTPAuthorizationCredentials = Depends(security)) -> bool:
-        """Verify API key if authentication is enabled"""
-        # Skip authentication if no API key is configured
+    def _validate_api_key(self, provided_api_key: Optional[str]) -> bool:
+        """Validate a provided API key if authentication is enabled."""
         if not self.config.api_key:
             return True
 
-        if not credentials:
+        if not provided_api_key:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        if credentials.credentials != self.config.api_key:
+        if provided_api_key != self.config.api_key:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Invalid API key"
@@ -149,11 +152,8 @@ class APIServer:
 
         return True
 
-    async def check_rate_limit(self, request: Request) -> bool:
-        """Check rate limit for the request"""
-        # Use client IP as identifier
-        client_id = request.client.host
-
+    def _check_client_rate_limit(self, client_id: str) -> bool:
+        """Check rate limit for a client identifier."""
         if not rate_limiter.is_allowed(client_id):
             retry_after = rate_limiter.get_retry_after(client_id)
             raise HTTPException(
@@ -163,6 +163,164 @@ class APIServer:
             )
 
         return True
+
+    async def verify_api_key(self, credentials: HTTPAuthorizationCredentials = Depends(security)) -> bool:
+        """Verify API key if authentication is enabled"""
+        provided_api_key = credentials.credentials if credentials else None
+        return self._validate_api_key(provided_api_key)
+
+    async def check_rate_limit(self, request: Request) -> bool:
+        """Check rate limit for the request"""
+        # Use client IP as identifier
+        client_id = request.client.host
+
+        return self._check_client_rate_limit(client_id)
+
+    async def verify_websocket_api_key(self, websocket: WebSocket) -> bool:
+        """Verify API key for a WebSocket connection."""
+        provided_api_key = None
+
+        authorization = websocket.headers.get("authorization")
+        if authorization and authorization.startswith("Bearer "):
+            provided_api_key = authorization[7:]
+
+        if not provided_api_key:
+            provided_api_key = websocket.query_params.get("api_key")
+
+        try:
+            return self._validate_api_key(provided_api_key)
+        except HTTPException as exc:
+            close_code = 4401 if exc.status_code == status.HTTP_401_UNAUTHORIZED else 4403
+            await websocket.close(code=close_code, reason=exc.detail)
+            return False
+
+    async def check_websocket_rate_limit(self, websocket: WebSocket) -> bool:
+        """Check rate limit for a WebSocket connection."""
+        client_id = websocket.client.host if websocket.client else "unknown"
+
+        try:
+            return self._check_client_rate_limit(client_id)
+        except HTTPException as exc:
+            await websocket.close(code=4429, reason=exc.detail)
+            return False
+
+    async def _prepare_stream_inputs(self, message: str) -> Tuple[str, List[str]]:
+        """Prepare streaming inputs using the default PebbleMind query-preparation settings."""
+        prepare_inputs = self._get_pebblemind_hook("prepare_generation_inputs")
+        if prepare_inputs is None:
+            return message, []
+
+        prepared = prepare_inputs(
+            message,
+            use_rag=True,
+            enhance_reasoning=True,
+            reasoning_type="analytical",
+            use_memory=True,
+        )
+        if inspect.isawaitable(prepared):
+            return await prepared
+        return prepared
+
+    async def _finalize_stream_interaction(
+        self,
+        message: str,
+        response: str,
+        start_time: float,
+    ) -> None:
+        """Apply PebbleMind post-generation side effects for completed streams."""
+        finalize_interaction = self._get_pebblemind_hook("finalize_interaction")
+        if finalize_interaction is None:
+            return
+
+        finalized = finalize_interaction(
+            message,
+            response,
+            use_memory=True,
+            learn_from_interaction=True,
+            memory_importance=0.6,
+            start_time=start_time,
+        )
+        if inspect.isawaitable(finalized):
+            await finalized
+
+    async def _record_stream_error(
+        self,
+        message: str,
+        error: Exception,
+        start_time: float,
+    ) -> None:
+        """Allow PebbleMind to learn from streaming failures."""
+        record_interaction_error = self._get_pebblemind_hook("record_interaction_error")
+        if record_interaction_error is None:
+            return
+
+        recorded = record_interaction_error(
+            message,
+            error,
+            learn_from_interaction=True,
+            start_time=start_time,
+        )
+        if inspect.isawaitable(recorded):
+            await recorded
+
+    async def _read_transcription_upload(self, request: Request) -> Tuple[bytes, str]:
+        """Read an uploaded transcription file, even when multipart extras are unavailable."""
+        try:
+            form = await request.form()
+            audio_file = form.get("file")
+            if not audio_file:
+                raise HTTPException(status_code=400, detail="No audio file provided")
+            return await audio_file.read(), audio_file.content_type or "application/octet-stream"
+        except HTTPException:
+            raise
+        except AssertionError as exc:
+            if "python-multipart" not in str(exc):
+                raise
+            return await self._read_transcription_upload_without_multipart(request)
+
+    async def _read_transcription_upload_without_multipart(self, request: Request) -> Tuple[bytes, str]:
+        """Fallback multipart parsing for basic upload validation without python-multipart."""
+        content_type_header = request.headers.get("content-type", "")
+        if "multipart/form-data" not in content_type_header.lower():
+            raise HTTPException(status_code=400, detail="No audio file provided")
+
+        body = await request.body()
+        if not body:
+            raise HTTPException(status_code=400, detail="No audio file provided")
+
+        message = BytesParser(policy=email_policy).parsebytes(
+            (
+                f"Content-Type: {content_type_header}\r\n"
+                "MIME-Version: 1.0\r\n\r\n"
+            ).encode("utf-8")
+            + body
+        )
+
+        if not message.is_multipart():
+            raise HTTPException(status_code=400, detail="No audio file provided")
+
+        for part in message.iter_parts():
+            if part.get_param("name", header="content-disposition") != "file":
+                continue
+
+            return part.get_payload(decode=True) or b"", part.get_content_type()
+
+        raise HTTPException(status_code=400, detail="No audio file provided")
+
+    def _get_pebblemind_hook(self, hook_name: str):
+        """Return real PebbleMind hooks while ignoring dynamic Mock fallback attributes.
+
+        Some API tests pass plain ``Mock()`` instances as the PebbleMind dependency.
+        Direct ``getattr(mock, name)`` access fabricates placeholder attributes even when
+        the hook was never defined, so this helper only accepts explicitly provided
+        instance hooks or actual class methods.
+        """
+        instance_hooks = getattr(self.pebblemind, "__dict__", {})
+        if hook_name in instance_hooks:
+            return instance_hooks[hook_name]
+        if hasattr(type(self.pebblemind), hook_name):
+            return getattr(self.pebblemind, hook_name)
+        return None
 
     def _setup_middleware(self):
         """Setup CORS and other middleware"""
@@ -296,7 +454,7 @@ class APIServer:
                             raw_request,
                             **gen_params
                         ),
-                        media_type="text/plain"
+                        media_type="text/event-stream"
                     )
                 else:
                     # Regular response
@@ -332,6 +490,8 @@ class APIServer:
                         )
                     )
 
+            except HTTPException:
+                raise
             except Exception as e:
                 logger.error(f"Chat completion failed: {e}", exc_info=True)
                 raise HTTPException(
@@ -346,13 +506,7 @@ class APIServer:
         ):
             """Transcribe audio to text (OpenAI-compatible)"""
             try:
-                # Parse multipart form data
-                form = await request.form()
-                audio_file = form.get("file")
-                model = form.get("model", "whisper-1")
-
-                if not audio_file:
-                    raise HTTPException(status_code=400, detail="No audio file provided")
+                audio_data, content_type = await self._read_transcription_upload(request)
 
                 # Validate file type
                 allowed_audio_types = {
@@ -361,7 +515,6 @@ class APIServer:
                     "audio/ogg", "audio/flac"
                 }
 
-                content_type = audio_file.content_type
                 if content_type not in allowed_audio_types:
                     raise HTTPException(
                         status_code=400,
@@ -370,8 +523,6 @@ class APIServer:
 
                 # Validate file size (max 25MB)
                 MAX_FILE_SIZE = 25 * 1024 * 1024
-                audio_data = await audio_file.read()
-
                 if len(audio_data) > MAX_FILE_SIZE:
                     raise HTTPException(
                         status_code=400,
@@ -385,6 +536,8 @@ class APIServer:
                     "text": transcription
                 }
 
+            except HTTPException:
+                raise
             except Exception as e:
                 logger.error(f"Transcription failed: {e}", exc_info=True)
                 raise HTTPException(
@@ -419,6 +572,8 @@ class APIServer:
                     headers={"Content-Disposition": "attachment; filename=speech.wav"}
                 )
 
+            except HTTPException:
+                raise
             except Exception as e:
                 logger.error(f"Speech generation failed: {e}", exc_info=True)
                 raise HTTPException(
@@ -428,11 +583,25 @@ class APIServer:
 
         @self.app.websocket("/ws/chat")
         async def websocket_chat(websocket: WebSocket):
+            if not await self.verify_websocket_api_key(websocket):
+                return
+
+            if not await self.check_websocket_rate_limit(websocket):
+                return
+
             await websocket.accept()
+            listener = None
+            start_time = time.time()
             try:
                 data = await websocket.receive_json()
-                message = data.get("message", "")
+                message = data.get("message", "").strip()
                 system_prompt = data.get("system_prompt")
+
+                if not message:
+                    await websocket.send_json(
+                        {"error": {"message": "No message provided", "type": "validation_error"}}
+                    )
+                    return
 
                 gen_params = {}
                 for param in ["max_tokens", "temperature", "top_p", "top_k"]:
@@ -453,17 +622,52 @@ class APIServer:
 
                 listener = asyncio.create_task(cancel_listener())
 
+                message, context = await self._prepare_stream_inputs(message)
+                accumulated_response: List[str] = []
+                stream_error: Optional[Exception] = None
                 generator = self.pebblemind.llm_engine.generate_stream(
                     message,
+                    context=context,
                     system_prompt=system_prompt,
                     stop_event=stop_event,
                     **gen_params
                 )
 
-                await websocket_stream(websocket, generator, stop_event)
-                listener.cancel()
+                async def tracked_generator():
+                    nonlocal stream_error
+                    try:
+                        async for chunk in generator:
+                            accumulated_response.append(chunk)
+                            yield chunk
+                    except Exception as exc:
+                        stream_error = exc
+                        raise
+
+                await websocket_stream(websocket, tracked_generator(), stop_event)
+                if stream_error is not None:
+                    await self._record_stream_error(message, stream_error, start_time)
+                elif not stop_event.is_set():
+                    await self._finalize_stream_interaction(
+                        message,
+                        "".join(accumulated_response),
+                        start_time,
+                    )
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected")
+            except Exception as e:
+                logger.error(f"WebSocket chat failed: {e}", exc_info=True)
+                await self._record_stream_error(message, e, start_time)
+                try:
+                    await websocket.send_json(websocket_internal_error(str(e)))
+                except WebSocketDisconnect:
+                    logger.info("WebSocket disconnected while sending error response")
+            finally:
+                if listener is not None and not listener.done():
+                    listener.cancel()
+                    try:
+                        await listener
+                    except asyncio.CancelledError:
+                        pass
 
 
     async def _stream_chat_completion(
@@ -476,24 +680,44 @@ class APIServer:
     ):
         """Stream chat completion response"""
         stop_event = asyncio.Event()
+        start_time = time.time()
 
         async def disconnect_watcher():
-            if await raw_request.is_disconnected():
-                stop_event.set()
+            while not stop_event.is_set():
+                if await raw_request.is_disconnected():
+                    stop_event.set()
+                    break
+                await asyncio.sleep(DISCONNECT_POLL_INTERVAL)
 
         watcher_task = asyncio.create_task(disconnect_watcher())
 
         try:
+            message, context = await self._prepare_stream_inputs(message)
+            accumulated_response: List[str] = []
             generator = self.pebblemind.llm_engine.generate_stream(
                 message,
+                context=context,
                 system_prompt=system_prompt,
                 stop_event=stop_event,
                 **kwargs
             )
-            async for chunk in sse_stream(generator, model, raw_request):
+
+            async def tracked_generator():
+                async for token in generator:
+                    accumulated_response.append(token)
+                    yield token
+
+            async for chunk in sse_stream(tracked_generator(), model, raw_request):
                 yield chunk
+            if not stop_event.is_set():
+                await self._finalize_stream_interaction(
+                    message,
+                    "".join(accumulated_response),
+                    start_time,
+                )
         except Exception as e:
             logger.error(f"Streaming failed: {e}")
+            await self._record_stream_error(message, e, start_time)
             error_data = {"error": {"message": str(e), "type": "internal_error"}}
             yield f"data: {json.dumps(error_data)}\n\n"
         finally:

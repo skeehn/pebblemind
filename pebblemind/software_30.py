@@ -163,7 +163,7 @@ class LearningOptimizer:
     
     async def _adjust_parameters(self, interaction: Dict[str, Any]):
         """Adjust parameters based on interaction performance"""
-        feedback = interaction.get("feedback", "")
+        feedback = interaction.get("feedback") or ""
         engagement_score = interaction.get("engagement_score", 0.5)
         
         # Adjust context window based on complexity and engagement

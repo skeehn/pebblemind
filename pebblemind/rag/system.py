@@ -6,6 +6,7 @@ import sqlite3
 import hashlib
 import json
 import ast
+import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import numpy as np
@@ -19,6 +20,7 @@ from ..config import RAGConfig
 from ..performance.connection_pool import ConnectionPool
 
 logger = logging.getLogger(__name__)
+FALLBACK_SEARCH_MIN_TERM_LENGTH = 3
 
 
 class RAGSystem:
@@ -201,6 +203,29 @@ class RAGSystem:
 
         return list(set(chunks))  # Remove duplicates
 
+    def _extract_search_terms(self, query: str) -> List[str]:
+        """Extract normalized terms for fallback text search.
+
+        Terms are extracted from lowercase word tokens matched by `\w` (so
+        letters, digits, and underscores are included). Short tokenized words
+        below the minimum length are dropped, but if that would remove
+        everything and the original query is non-empty, the raw lowercased
+        query is preserved so fallback search can still attempt a match.
+        Empty queries return an empty term list.
+        """
+        # Extract lowercase alphanumeric tokens that meet the minimum fallback term length.
+        terms = [
+            term
+            for term in re.findall(r"\b\w+\b", query.lower())
+            if len(term) >= FALLBACK_SEARCH_MIN_TERM_LENGTH
+        ]
+
+        if not terms and query.strip():
+            terms = [query.strip().lower()]
+
+        # Preserve first-seen order while dropping duplicate terms.
+        return list(dict.fromkeys(terms))
+
     async def add_documents(self, documents: List[Dict[str, Any]]) -> None:
         """Add documents to the vector database"""
         if not self._initialized:
@@ -294,20 +319,33 @@ class RAGSystem:
                     # Fallback to simple search (no vector similarity)
                     logger.warning("Vector search not available, using basic text search")
 
-                    cursor.execute("""
+                    search_terms = self._extract_search_terms(query)
+                    term_count = len(search_terms)
+                    if not term_count:
+                        return results
+
+                    where_clause = " OR ".join(["LOWER(content) LIKE ?" for _ in search_terms])
+                    search_patterns = tuple(f"%{term}%" for term in search_terms)
+
+                    cursor.execute(f"""
                         SELECT id, content, metadata
                         FROM documents
-                        WHERE content LIKE ?
-                        LIMIT ?
-                    """, (f"%{query}%", k))
+                        WHERE {where_clause}
+                    """, search_patterns)
 
+                    ranked_rows = []
                     for row in cursor.fetchall():
                         doc_id, content, metadata = row
+                        content_lower = content.lower()
+                        match_count = sum(term in content_lower for term in search_terms)
+                        ranked_rows.append((match_count, doc_id, content, metadata))
+
+                    for match_count, doc_id, content, metadata in sorted(ranked_rows, reverse=True)[:k]:
                         results.append({
                             "id": doc_id,
                             "content": content,
                             "metadata": self._parse_metadata(metadata),
-                            "score": 0.5,  # Default score for fallback
+                            "score": match_count / term_count,
                         })
 
                 return results

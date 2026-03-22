@@ -16,6 +16,13 @@ from ..config import LLMConfig
 
 logger = logging.getLogger(__name__)
 
+# Fallback system prompt used when callers do not provide a custom system prompt.
+DEFAULT_SYSTEM_PROMPT = (
+    "You are PebbleMind, a highly efficient AI assistant running on lightweight hardware. "
+    "Provide concise, accurate responses with clear reasoning. "
+    "Focus on being helpful while maintaining efficiency."
+)
+
 # Model path mapping for different Qwen2.5 sizes
 MODEL_PATHS = {
     "1.5b": "models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
@@ -235,43 +242,8 @@ class LLMEngine:
             raise RuntimeError("LLM engine not initialized")
 
         try:
-            # Build the conversation context efficiently
-            messages = []
-
-            # Add system prompt if provided
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            else:
-                # Efficient system prompt optimized for lightweight devices
-                messages.append({
-                    "role": "system",
-                    "content": (
-                        "You are PebbleMind, a highly efficient AI assistant running on lightweight hardware. "
-                        "Provide concise, accurate responses with clear reasoning. "
-                        "Focus on being helpful while maintaining efficiency."
-                    )
-                })
-
-            # Add context efficiently (limit the amount to maintain performance)
-            if context:
-                # Only take the most recent context items to maintain efficiency
-                recent_context = context[-3:] if len(context) > 3 else context
-                for ctx in recent_context:
-                    messages.append({"role": "system", "content": f"Context: {ctx}"})
-
-            # Add user message
-            messages.append({"role": "user", "content": message})
-
-            # Generation parameters optimized for lightweight devices
-            generation_params = {
-                "messages": messages,
-                "max_tokens": min(kwargs.get("max_tokens", self.config.max_tokens), 256),  # Limit for efficiency
-                "temperature": min(kwargs.get("temperature", self.config.temperature), 0.7),  # Conservative for quality
-                "top_p": min(kwargs.get("top_p", self.config.top_p), 0.9),  # Conservative for quality
-                "top_k": kwargs.get("top_k", self.config.top_k),
-                "stream": False,
-                "stop": ["\n\n"]  # Stop early to maintain efficiency
-            }
+            messages = self._build_messages(message, context=context, system_prompt=system_prompt)
+            generation_params = self._build_generation_params(messages, stream=False, **kwargs)
 
             # Run generation in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -303,35 +275,8 @@ class LLMEngine:
             raise RuntimeError("LLM engine not initialized")
 
         try:
-            # Build conversation context (same as generate method)
-            messages = []
-
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            else:
-                messages.append({
-                    "role": "system",
-                    "content": "You are PebbleMind, a helpful and knowledgeable AI assistant."
-                })
-
-            if context:
-                context_text = "\n\n".join(context)
-                messages.append({
-                    "role": "system",
-                    "content": f"Relevant context information:\n{context_text}"
-                })
-
-            messages.append({"role": "user", "content": message})
-
-            # Enable streaming
-            generation_params = {
-                "messages": messages,
-                "max_tokens": kwargs.get("max_tokens", self.config.max_tokens),
-                "temperature": kwargs.get("temperature", self.config.temperature),
-                "top_p": kwargs.get("top_p", self.config.top_p),
-                "top_k": kwargs.get("top_k", self.config.top_k),
-                "stream": True,
-            }
+            messages = self._build_messages(message, context=context, system_prompt=system_prompt)
+            generation_params = self._build_generation_params(messages, stream=True, **kwargs)
 
             # Stream the response
             loop = asyncio.get_event_loop()
@@ -354,6 +299,46 @@ class LLMEngine:
         except Exception as e:
             logger.error(f"Error in streaming generation: {e}")
             raise
+
+    def _build_messages(
+        self,
+        message: str,
+        context: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+    ) -> List[Dict[str, str]]:
+        """Build conversation messages consistently for regular and streaming generation."""
+        messages: List[Dict[str, str]] = []
+
+        messages.append({
+            "role": "system",
+            "content": system_prompt or DEFAULT_SYSTEM_PROMPT,
+        })
+
+        if context:
+            recent_context = context[-3:] if len(context) > 3 else context
+            for ctx in recent_context:
+                messages.append({"role": "system", "content": f"Context: {ctx}"})
+
+        messages.append({"role": "user", "content": message})
+        return messages
+
+    def _build_generation_params(
+        self,
+        messages: List[Dict[str, str]],
+        *,
+        stream: bool,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Build bounded generation parameters consistently for regular and streaming generation."""
+        return {
+            "messages": messages,
+            "max_tokens": min(kwargs.get("max_tokens", self.config.max_tokens), 256),
+            "temperature": min(kwargs.get("temperature", self.config.temperature), 0.7),
+            "top_p": min(kwargs.get("top_p", self.config.top_p), 0.9),
+            "top_k": kwargs.get("top_k", self.config.top_k),
+            "stream": stream,
+            "stop": ["\n\n"],
+        }
 
     async def switch_model(self, model_size: str) -> bool:
         """Switch to a different model size without restarting the application"""

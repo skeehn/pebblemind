@@ -179,6 +179,60 @@ class TestLLMEngine:
     @pytest.mark.asyncio
     @patch('pebblemind.core.llm.Llama')
     @patch('pebblemind.core.llm.Path')
+    async def test_generate_stream_uses_same_prompt_context_and_caps(self, mock_path, mock_llama_class, llm_config):
+        """Test streaming generation matches non-streaming prompt/context construction and caps"""
+        mock_path_instance = MagicMock()
+        mock_path_instance.exists.return_value = True
+        mock_path_instance.is_file.return_value = True
+        mock_path_instance.stat.return_value.st_size = 1024 * 1024 * 1024
+        mock_path.return_value = mock_path_instance
+
+        mock_llama_instance = MagicMock()
+        mock_llama_instance.create_chat_completion.return_value = [
+            {"choices": [{"delta": {"content": "Hello"}}]},
+            {"choices": [{"delta": {}}]},
+        ]
+        mock_llama_class.return_value = mock_llama_instance
+
+        engine = LLMEngine(llm_config)
+        await engine.initialize()
+
+        chunks = []
+        async for chunk in engine.generate_stream(
+            "Test message",
+            context=["Context 1", "Context 2", "Context 3", "Context 4"],
+            max_tokens=999,
+            temperature=0.95,
+            top_p=0.99,
+        ):
+            chunks.append(chunk)
+
+        assert chunks == ["Hello"]
+
+        generation_params = mock_llama_instance.create_chat_completion.call_args.kwargs
+        assert generation_params["stream"] is True
+        assert generation_params["max_tokens"] == 256
+        assert generation_params["temperature"] == 0.7
+        assert generation_params["top_p"] == 0.9
+        assert generation_params["stop"] == ["\n\n"]
+        assert generation_params["messages"] == [
+            {
+                "role": "system",
+                "content": (
+                    "You are PebbleMind, a highly efficient AI assistant running on lightweight hardware. "
+                    "Provide concise, accurate responses with clear reasoning. "
+                    "Focus on being helpful while maintaining efficiency."
+                ),
+            },
+            {"role": "system", "content": "Context: Context 2"},
+            {"role": "system", "content": "Context: Context 3"},
+            {"role": "system", "content": "Context: Context 4"},
+            {"role": "user", "content": "Test message"},
+        ]
+
+    @pytest.mark.asyncio
+    @patch('pebblemind.core.llm.Llama')
+    @patch('pebblemind.core.llm.Path')
     async def test_switch_model(self, mock_path, mock_llama_class, llm_config):
         """Test model switching"""
         # Setup mocks

@@ -5,11 +5,14 @@ import json
 import re
 from typing import Dict, Any, List, Optional, Callable, Union
 from pathlib import Path
-import requests
-import aiohttp
 import subprocess
 import os
 from datetime import datetime
+
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 
 
 class ToolManager:
@@ -182,6 +185,8 @@ class ToolManager:
     async def _wikipedia_tool(self, query: str, sentences: int = 3) -> str:
         """Get information from Wikipedia"""
         try:
+            if aiohttp is None:
+                raise ImportError("aiohttp is required for Wikipedia lookups")
             # Use requests to access Wikipedia API
             # This is a simplified example; a full implementation would need proper error handling
             search_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{query.replace(' ', '_')}"
