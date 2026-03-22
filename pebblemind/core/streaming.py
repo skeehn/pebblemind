@@ -5,6 +5,11 @@ from typing import AsyncGenerator, Optional
 from fastapi import Request, WebSocket, WebSocketDisconnect
 
 
+def websocket_internal_error(message: str) -> dict:
+    """Build a standardized WebSocket internal error payload."""
+    return {"error": {"message": message, "type": "internal_error"}}
+
+
 async def sse_stream(
     generator: AsyncGenerator[str, None],
     model: str,
@@ -67,9 +72,7 @@ async def websocket_stream(
         if stop_event:
             stop_event.set()
     except Exception as e:
-        await websocket.send_json(
-            {"error": {"message": str(e), "type": "internal_error"}}
-        )
+        await websocket.send_json(websocket_internal_error(str(e)))
     finally:
         try:
             await websocket.send_json({"event": "done"})

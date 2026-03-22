@@ -18,7 +18,7 @@ import uvicorn
 if TYPE_CHECKING:
     from ..pebblemind_app import PebbleMind
 
-from ..core.streaming import sse_stream, websocket_stream
+from ..core.streaming import sse_stream, websocket_stream, websocket_internal_error
 from ..config import APIConfig
 
 logger = logging.getLogger(__name__)
@@ -473,9 +473,7 @@ class APIServer:
             except Exception as e:
                 logger.error(f"WebSocket chat failed: {e}", exc_info=True)
                 try:
-                    await websocket.send_json(
-                        {"error": {"message": str(e), "type": "internal_error"}}
-                    )
+                    await websocket.send_json(websocket_internal_error(str(e)))
                 except WebSocketDisconnect:
                     logger.info("WebSocket disconnected while sending error response")
             finally:

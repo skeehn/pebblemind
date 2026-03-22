@@ -365,7 +365,6 @@ class TestAPIEndToEnd:
 
             async def mock_stream(*args, **kwargs):
                 raise RuntimeError("stream failed")
-                yield
 
             config = APIConfig()
             mock_mind = Mock()
