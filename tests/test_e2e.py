@@ -267,6 +267,8 @@ class TestAPIEndToEnd:
             assert data_lines[-1] == "[DONE]"
 
             chunks = [json.loads(line) for line in data_lines[:-1]]
+            # This test uses a deterministic mock stream that yields two content chunks,
+            # followed by the final empty delta chunk required by the OpenAI SSE format.
             assert len(chunks) == 3
 
             first_chunk = chunks[0]

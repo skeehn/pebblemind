@@ -20,6 +20,7 @@ from ..config import RAGConfig
 from ..performance.connection_pool import ConnectionPool
 
 logger = logging.getLogger(__name__)
+FALLBACK_SEARCH_MIN_TERM_LENGTH = 3
 
 
 class RAGSystem:
@@ -203,8 +204,17 @@ class RAGSystem:
         return list(set(chunks))  # Remove duplicates
 
     def _extract_search_terms(self, query: str) -> List[str]:
-        """Extract normalized search terms for fallback text search"""
-        terms = [term for term in re.findall(r"\b\w+\b", query.lower()) if len(term) > 2]
+        """Extract normalized terms for fallback text search.
+
+        Short tokenized words below the minimum length are dropped, but if that
+        would remove everything and the original query is non-empty, the raw
+        lowercased query is preserved so fallback search can still attempt a match.
+        """
+        terms = [
+            term
+            for term in re.findall(r"\b\w+\b", query.lower())
+            if len(term) >= FALLBACK_SEARCH_MIN_TERM_LENGTH
+        ]
 
         if not terms and query.strip():
             terms = [query.strip().lower()]
@@ -305,7 +315,8 @@ class RAGSystem:
                     logger.warning("Vector search not available, using basic text search")
 
                     search_terms = self._extract_search_terms(query)
-                    if not search_terms:
+                    term_count = len(search_terms)
+                    if not term_count:
                         return results
 
                     where_clause = " OR ".join(["LOWER(content) LIKE ?" for _ in search_terms])
@@ -329,7 +340,7 @@ class RAGSystem:
                             "id": doc_id,
                             "content": content,
                             "metadata": self._parse_metadata(metadata),
-                            "score": match_count / len(search_terms),
+                            "score": match_count / term_count,
                         })
 
                 return results
