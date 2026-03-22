@@ -206,8 +206,9 @@ class RAGSystem:
     def _extract_search_terms(self, query: str) -> List[str]:
         """Extract normalized terms for fallback text search.
 
-        Short tokenized words below the minimum length are dropped, but if that
-        would remove everything and the original query is non-empty, the raw
+        Terms are extracted from lowercase alphanumeric word tokens. Short
+        tokenized words below the minimum length are dropped, but if that would
+        remove everything and the original query is non-empty, the raw
         lowercased query is preserved so fallback search can still attempt a match.
         Empty queries return an empty term list.
         """
