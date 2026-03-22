@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import json
-import inspect
 import time
 from collections import defaultdict
 from typing import Dict, Any, List, Optional, TYPE_CHECKING, Tuple
@@ -207,7 +206,7 @@ class APIServer:
         if prepare_inputs is None:
             return message, []
 
-        prepared = prepare_inputs(
+        return await prepare_inputs(
             self.pebblemind,
             message,
             use_rag=True,
@@ -215,10 +214,6 @@ class APIServer:
             reasoning_type="analytical",
             use_memory=True,
         )
-        if inspect.isawaitable(prepared):
-            return await prepared
-
-        return prepared
 
     def _setup_middleware(self):
         """Setup CORS and other middleware"""
