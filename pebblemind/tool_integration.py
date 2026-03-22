@@ -5,7 +5,6 @@ import json
 import re
 from typing import Dict, Any, List, Optional, Callable, Union
 from pathlib import Path
-import requests
 import subprocess
 import os
 from datetime import datetime

@@ -5,6 +5,8 @@ import logging
 import json
 import inspect
 import time
+from email.parser import BytesParser
+from email.policy import default as email_policy
 from collections import defaultdict
 from typing import Dict, Any, List, Optional, TYPE_CHECKING, Tuple
 from datetime import datetime, timedelta
@@ -261,6 +263,50 @@ class APIServer:
         if inspect.isawaitable(recorded):
             await recorded
 
+    async def _read_transcription_upload(self, request: Request) -> Tuple[bytes, str]:
+        """Read an uploaded transcription file, even when multipart extras are unavailable."""
+        try:
+            form = await request.form()
+            audio_file = form.get("file")
+            if not audio_file:
+                raise HTTPException(status_code=400, detail="No audio file provided")
+            return await audio_file.read(), audio_file.content_type or "application/octet-stream"
+        except HTTPException:
+            raise
+        except AssertionError as exc:
+            if "python-multipart" not in str(exc):
+                raise
+            return await self._read_transcription_upload_without_multipart(request)
+
+    async def _read_transcription_upload_without_multipart(self, request: Request) -> Tuple[bytes, str]:
+        """Fallback multipart parsing for basic upload validation without python-multipart."""
+        content_type_header = request.headers.get("content-type", "")
+        if "multipart/form-data" not in content_type_header.lower():
+            raise HTTPException(status_code=400, detail="No audio file provided")
+
+        body = await request.body()
+        if not body:
+            raise HTTPException(status_code=400, detail="No audio file provided")
+
+        message = BytesParser(policy=email_policy).parsebytes(
+            (
+                f"Content-Type: {content_type_header}\r\n"
+                "MIME-Version: 1.0\r\n\r\n"
+            ).encode("utf-8")
+            + body
+        )
+
+        if not message.is_multipart():
+            raise HTTPException(status_code=400, detail="No audio file provided")
+
+        for part in message.iter_parts():
+            if part.get_param("name", header="content-disposition") != "file":
+                continue
+
+            return part.get_payload(decode=True) or b"", part.get_content_type()
+
+        raise HTTPException(status_code=400, detail="No audio file provided")
+
     def _get_pebblemind_hook(self, hook_name: str):
         """Return real PebbleMind hooks while ignoring dynamic Mock fallback attributes.
 
@@ -460,13 +506,7 @@ class APIServer:
         ):
             """Transcribe audio to text (OpenAI-compatible)"""
             try:
-                # Parse multipart form data
-                form = await request.form()
-                audio_file = form.get("file")
-                model = form.get("model", "whisper-1")
-
-                if not audio_file:
-                    raise HTTPException(status_code=400, detail="No audio file provided")
+                audio_data, content_type = await self._read_transcription_upload(request)
 
                 # Validate file type
                 allowed_audio_types = {
@@ -475,7 +515,6 @@ class APIServer:
                     "audio/ogg", "audio/flac"
                 }
 
-                content_type = audio_file.content_type
                 if content_type not in allowed_audio_types:
                     raise HTTPException(
                         status_code=400,
@@ -484,8 +523,6 @@ class APIServer:
 
                 # Validate file size (max 25MB)
                 MAX_FILE_SIZE = 25 * 1024 * 1024
-                audio_data = await audio_file.read()
-
                 if len(audio_data) > MAX_FILE_SIZE:
                     raise HTTPException(
                         status_code=400,

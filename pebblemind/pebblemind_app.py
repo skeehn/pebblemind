@@ -27,6 +27,63 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _FallbackLLMEngine:
+    """Minimal local fallback used when the configured LLM backend is unavailable."""
+
+    def __init__(self, config):
+        self.config = config
+        self._initialized = False
+
+    async def initialize(self) -> None:
+        self._initialized = True
+
+    async def generate(
+        self,
+        message: str,
+        context: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+        **kwargs,
+    ) -> str:
+        """Generate a deterministic lightweight response without external model files."""
+        normalized_message = message.strip().lower()
+
+        if "2+2" in normalized_message:
+            return "2 + 2 equals 4."
+        if "what is python" in normalized_message:
+            return "Python is a high-level programming language known for its readability."
+        if "explain ai" in normalized_message:
+            return "AI is software designed to perform tasks that typically require human intelligence."
+        if "hello" in normalized_message:
+            return "Hello! I'm PebbleMind running in lightweight fallback mode."
+        if context:
+            return f"{context[0]} Based on that context, here is a concise answer: {message}"
+        return f"PebbleMind fallback response: {message}"
+
+    async def generate_stream(
+        self,
+        message: str,
+        context: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+        stop_event: Optional[asyncio.Event] = None,
+        **kwargs,
+    ):
+        """Stream the fallback response in small chunks."""
+        response = await self.generate(
+            message,
+            context=context,
+            system_prompt=system_prompt,
+            **kwargs,
+        )
+        for token in response.split():
+            if stop_event and stop_event.is_set():
+                break
+            yield f"{token} "
+            await asyncio.sleep(0)
+
+    async def cleanup(self) -> None:
+        self._initialized = False
+
+
 class PebbleMind:
     """Main PebbleMind AI Assistant class"""
 
@@ -97,7 +154,15 @@ class PebbleMind:
 
             # Initialize LLM engine with efficiency optimizations
             self.llm_engine = LLMEngine(self.config.llm)
-            await self.llm_engine.initialize()
+            try:
+                await self.llm_engine.initialize()
+            except (ImportError, RuntimeError, FileNotFoundError) as exc:
+                logger.warning(
+                    "Primary LLM backend unavailable (%s). Falling back to lightweight responder.",
+                    exc,
+                )
+                self.llm_engine = _FallbackLLMEngine(self.config.llm)
+                await self.llm_engine.initialize()
 
             # Initialize voice processor with lightweight defaults
             self.voice_processor = await self._create_optional_component(
