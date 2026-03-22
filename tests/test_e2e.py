@@ -356,9 +356,8 @@ class TestAPIEndToEnd:
             from unittest.mock import Mock, AsyncMock
 
             async def mock_stream(*args, **kwargs):
-                if False:
-                    yield ""
                 raise RuntimeError("stream failed")
+                yield  # pragma: no cover
 
             class FakePebbleMind:
                 def __init__(self):
@@ -484,9 +483,8 @@ class TestAPIEndToEnd:
             from unittest.mock import Mock, AsyncMock
 
             async def mock_stream(*args, **kwargs):
-                if False:
-                    yield ""
                 raise RuntimeError("stream failed")
+                yield  # pragma: no cover
 
             class FakePebbleMind:
                 def __init__(self):
@@ -561,9 +559,8 @@ class TestAPIEndToEnd:
             async def mock_stream(*args, **kwargs):
                 # Keep this as an async generator so it matches generate_stream's
                 # interface even though iteration raises immediately.
-                if False:
-                    yield ""
                 raise RuntimeError("stream failed")
+                yield  # pragma: no cover
 
             config = APIConfig()
             mock_mind = Mock()

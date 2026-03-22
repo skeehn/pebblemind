@@ -203,11 +203,7 @@ class APIServer:
 
     async def _prepare_stream_inputs(self, message: str) -> Tuple[str, List[str]]:
         """Prepare streaming inputs using the default PebbleMind query-preparation settings."""
-        prepare_inputs = None
-        if "prepare_generation_inputs" in getattr(self.pebblemind, "__dict__", {}):
-            prepare_inputs = self.pebblemind.__dict__["prepare_generation_inputs"]
-        elif hasattr(type(self.pebblemind), "prepare_generation_inputs"):
-            prepare_inputs = getattr(self.pebblemind, "prepare_generation_inputs")
+        prepare_inputs = self._get_pebblemind_hook("prepare_generation_inputs")
         if prepare_inputs is None:
             return message, []
 
@@ -229,11 +225,7 @@ class APIServer:
         start_time: float,
     ) -> None:
         """Apply PebbleMind post-generation side effects for completed streams."""
-        finalize_interaction = None
-        if "finalize_interaction" in getattr(self.pebblemind, "__dict__", {}):
-            finalize_interaction = self.pebblemind.__dict__["finalize_interaction"]
-        elif hasattr(type(self.pebblemind), "finalize_interaction"):
-            finalize_interaction = getattr(self.pebblemind, "finalize_interaction")
+        finalize_interaction = self._get_pebblemind_hook("finalize_interaction")
         if finalize_interaction is None:
             return
 
@@ -255,11 +247,7 @@ class APIServer:
         start_time: float,
     ) -> None:
         """Allow PebbleMind to learn from streaming failures."""
-        record_interaction_error = None
-        if "record_interaction_error" in getattr(self.pebblemind, "__dict__", {}):
-            record_interaction_error = self.pebblemind.__dict__["record_interaction_error"]
-        elif hasattr(type(self.pebblemind), "record_interaction_error"):
-            record_interaction_error = getattr(self.pebblemind, "record_interaction_error")
+        record_interaction_error = self._get_pebblemind_hook("record_interaction_error")
         if record_interaction_error is None:
             return
 
@@ -271,6 +259,15 @@ class APIServer:
         )
         if inspect.isawaitable(recorded):
             await recorded
+
+    def _get_pebblemind_hook(self, hook_name: str):
+        """Return explicitly defined PebbleMind hooks without triggering Mock fallback attributes."""
+        instance_hooks = getattr(self.pebblemind, "__dict__", {})
+        if hook_name in instance_hooks:
+            return instance_hooks[hook_name]
+        if hasattr(type(self.pebblemind), hook_name):
+            return getattr(self.pebblemind, hook_name)
+        return None
 
     def _setup_middleware(self):
         """Setup CORS and other middleware"""
