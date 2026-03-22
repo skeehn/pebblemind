@@ -227,7 +227,7 @@ class PebbleMind:
             
             # Combine RAG and memory contexts
             combined_context = []
-            if use_rag and self.rag_system and context:
+            if use_rag and self.rag_system:
                 relevant_docs = await self.rag_system.search(message, k=self.config.rag.max_results)
                 rag_context = [doc["content"] for doc in relevant_docs]
                 combined_context.extend(rag_context)

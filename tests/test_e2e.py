@@ -590,6 +590,83 @@ class TestAPIEndToEnd:
             pytest.skip("API dependencies not available")
 
 
+class TestPebbleMindQueryIntegration:
+    """Test PebbleMind query integration paths"""
+
+    @pytest.mark.asyncio
+    async def test_query_uses_rag_without_explicit_context(self):
+        """Test query applies RAG retrieval even when no context argument is provided"""
+        import sys
+        from importlib import import_module
+        from types import ModuleType
+        from unittest.mock import Mock, AsyncMock, patch
+
+        def make_module(name, **attrs):
+            module = ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            return module
+
+        stub_modules = {
+            "llama_cpp": make_module("llama_cpp", Llama=object),
+            "soundfile": make_module("soundfile"),
+            "psutil": make_module("psutil", Process=object),
+            "aiohttp": make_module("aiohttp", ClientSession=object, ClientTimeout=object),
+            "pebblemind.efficient_reasoning": make_module("pebblemind.efficient_reasoning", EfficientReasoningEngine=object),
+            "pebblemind.voice": make_module("pebblemind.voice", VoiceProcessor=object),
+            "pebblemind.rag": make_module("pebblemind.rag", RAGSystem=object),
+            "pebblemind.api": make_module("pebblemind.api", APIServer=object),
+            "pebblemind.performance_monitor": make_module("pebblemind.performance_monitor", PerformanceMonitor=object),
+            "pebblemind.reasoning_enhancer": make_module("pebblemind.reasoning_enhancer", ReasoningEnhancer=object),
+            "pebblemind.advanced_memory": make_module("pebblemind.advanced_memory", EnhancedMemoryManager=object),
+            "pebblemind.tool_integration": make_module("pebblemind.tool_integration", ToolManager=object, FunctionCallingManager=object),
+            "pebblemind.specialized_agents": make_module("pebblemind.specialized_agents", AgentOrchestrator=object),
+            "pebblemind.multimodal": make_module("pebblemind.multimodal", MultiModalManager=object),
+            "pebblemind.external_services": make_module("pebblemind.external_services", ServiceIntegrationManager=object),
+            "pebblemind.system_improvements": make_module("pebblemind.system_improvements", SystemImprovementManager=object, ComponentOrchestrator=object),
+            "pebblemind.software_30": make_module("pebblemind.software_30", SelfImprovementManager=object),
+        }
+
+        with patch.dict(sys.modules, stub_modules):
+            sys.modules.pop("pebblemind.pebblemind_app", None)
+            PebbleMind = import_module("pebblemind.pebblemind_app").PebbleMind
+
+            mind = PebbleMind.__new__(PebbleMind)
+            mind._initialized = True
+            mind.config = Mock()
+            mind.config.rag.max_results = 2
+            mind.config.llm.model_size = "1.5b"
+            mind.config.llm.threads = 4
+            mind.rag_system = Mock()
+            mind.rag_system.search = AsyncMock(
+                return_value=[{"content": "RAG context result"}]
+            )
+            mind.memory_manager = Mock()
+            mind.memory_manager.retrieve_relevant_context = AsyncMock(return_value=[])
+            mind.llm_engine = Mock()
+            mind.llm_engine.generate = AsyncMock(return_value="LLM response")
+            mind.tool_manager = Mock()
+            mind.performance_monitor = Mock()
+            mind.performance_monitor.capture_metrics = AsyncMock()
+
+            response = await mind.query(
+                "What is Python?",
+                enhance_reasoning=False,
+                use_memory=False,
+                use_tools=False,
+                learn_from_interaction=False,
+            )
+
+        assert response == "LLM response"
+        mind.rag_system.search.assert_awaited_once_with("What is Python?", k=2)
+        mind.llm_engine.generate.assert_awaited_once_with(
+            message="What is Python?",
+            context=["RAG context result"],
+        )
+
+        print("✓ Query uses RAG without explicit context")
+
+
 class TestMemorySystem:
     """Test long-term memory system end-to-end"""
 
