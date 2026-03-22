@@ -395,6 +395,138 @@ class TestAPIEndToEnd:
             pytest.skip("API dependencies not available")
 
     @pytest.mark.asyncio
+    async def test_websocket_chat_requires_api_key_when_configured(self):
+        """Test WebSocket chat rejects unauthenticated connections when auth is enabled"""
+        try:
+            from fastapi.testclient import TestClient
+            from starlette.websockets import WebSocketDisconnect
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            config = APIConfig(api_key="test-secret-key")
+            mock_mind = Mock()
+            mock_mind.llm_engine = Mock()
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with client.websocket_connect("/ws/chat"):
+                    pass
+
+            assert exc_info.value.code == 4401
+
+            print("✓ WebSocket chat requires API key when configured")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_websocket_chat_accepts_valid_api_key_header(self):
+        """Test WebSocket chat accepts valid Authorization headers"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            async def mock_stream(*args, **kwargs):
+                yield "secured"
+
+            config = APIConfig(api_key="test-secret-key")
+            mock_mind = Mock()
+            mock_mind.llm_engine = Mock()
+            mock_mind.llm_engine.generate_stream = mock_stream
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            with client.websocket_connect(
+                "/ws/chat",
+                headers={"Authorization": "Bearer test-secret-key"},
+            ) as websocket:
+                websocket.send_json({"message": "Hello"})
+                assert websocket.receive_json() == {"token": "secured"}
+                assert websocket.receive_json() == {"event": "done"}
+
+            print("✓ WebSocket chat accepts valid API key headers")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_websocket_chat_accepts_valid_api_key_query_param(self):
+        """Test WebSocket chat accepts API key query parameters"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            async def mock_stream(*args, **kwargs):
+                yield "secured"
+
+            config = APIConfig(api_key="test-secret-key")
+            mock_mind = Mock()
+            mock_mind.llm_engine = Mock()
+            mock_mind.llm_engine.generate_stream = mock_stream
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            with client.websocket_connect("/ws/chat?api_key=test-secret-key") as websocket:
+                websocket.send_json({"message": "Hello"})
+                assert websocket.receive_json() == {"token": "secured"}
+                assert websocket.receive_json() == {"event": "done"}
+
+            print("✓ WebSocket chat accepts API key query params")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_websocket_chat_is_rate_limited(self):
+        """Test WebSocket chat applies the same client rate limiting as HTTP routes"""
+        try:
+            from fastapi.testclient import TestClient
+            from starlette.websockets import WebSocketDisconnect
+            from pebblemind.api.server import APIServer, RateLimiter
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+            import pebblemind.api.server as server_module
+
+            async def mock_stream(*args, **kwargs):
+                yield "limited"
+
+            original_limiter = server_module.rate_limiter
+            server_module.rate_limiter = RateLimiter(requests_per_minute=1)
+
+            try:
+                config = APIConfig()
+                mock_mind = Mock()
+                mock_mind.llm_engine = Mock()
+                mock_mind.llm_engine.generate_stream = mock_stream
+                server = APIServer(config, mock_mind)
+
+                client = TestClient(server.app)
+                with client.websocket_connect("/ws/chat") as websocket:
+                    websocket.send_json({"message": "Hello"})
+                    assert websocket.receive_json() == {"token": "limited"}
+                    assert websocket.receive_json() == {"event": "done"}
+
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    with client.websocket_connect("/ws/chat"):
+                        pass
+
+                assert exc_info.value.code == 4429
+
+                print("✓ WebSocket chat rate limiting works")
+
+            finally:
+                server_module.rate_limiter = original_limiter
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
     async def test_rate_limiting_works(self):
         """Test rate limiting prevents abuse"""
         try:

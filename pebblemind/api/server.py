@@ -128,20 +128,19 @@ class APIServer:
         self._setup_routes()
         self._setup_middleware()
 
-    async def verify_api_key(self, credentials: HTTPAuthorizationCredentials = Depends(security)) -> bool:
-        """Verify API key if authentication is enabled"""
-        # Skip authentication if no API key is configured
+    def _validate_api_key(self, provided_api_key: Optional[str]) -> bool:
+        """Validate a provided API key if authentication is enabled."""
         if not self.config.api_key:
             return True
 
-        if not credentials:
+        if not provided_api_key:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        if credentials.credentials != self.config.api_key:
+        if provided_api_key != self.config.api_key:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Invalid API key"
@@ -149,11 +148,8 @@ class APIServer:
 
         return True
 
-    async def check_rate_limit(self, request: Request) -> bool:
-        """Check rate limit for the request"""
-        # Use client IP as identifier
-        client_id = request.client.host
-
+    def _check_client_rate_limit(self, client_id: str) -> bool:
+        """Check rate limit for a client identifier."""
         if not rate_limiter.is_allowed(client_id):
             retry_after = rate_limiter.get_retry_after(client_id)
             raise HTTPException(
@@ -163,6 +159,46 @@ class APIServer:
             )
 
         return True
+
+    async def verify_api_key(self, credentials: HTTPAuthorizationCredentials = Depends(security)) -> bool:
+        """Verify API key if authentication is enabled"""
+        provided_api_key = credentials.credentials if credentials else None
+        return self._validate_api_key(provided_api_key)
+
+    async def check_rate_limit(self, request: Request) -> bool:
+        """Check rate limit for the request"""
+        # Use client IP as identifier
+        client_id = request.client.host
+
+        return self._check_client_rate_limit(client_id)
+
+    async def verify_websocket_api_key(self, websocket: WebSocket) -> bool:
+        """Verify API key for a WebSocket connection."""
+        provided_api_key = None
+
+        authorization = websocket.headers.get("authorization")
+        if authorization and authorization.startswith("Bearer "):
+            provided_api_key = authorization[7:]
+
+        if not provided_api_key:
+            provided_api_key = websocket.query_params.get("api_key")
+
+        try:
+            return self._validate_api_key(provided_api_key)
+        except HTTPException as exc:
+            close_code = 4401 if exc.status_code == status.HTTP_401_UNAUTHORIZED else 4403
+            await websocket.close(code=close_code, reason=exc.detail)
+            return False
+
+    async def check_websocket_rate_limit(self, websocket: WebSocket) -> bool:
+        """Check rate limit for a WebSocket connection."""
+        client_id = websocket.client.host if websocket.client else "unknown"
+
+        try:
+            return self._check_client_rate_limit(client_id)
+        except HTTPException as exc:
+            await websocket.close(code=4429, reason=exc.detail)
+            return False
 
     def _setup_middleware(self):
         """Setup CORS and other middleware"""
@@ -434,6 +470,12 @@ class APIServer:
 
         @self.app.websocket("/ws/chat")
         async def websocket_chat(websocket: WebSocket):
+            if not await self.verify_websocket_api_key(websocket):
+                return
+
+            if not await self.check_websocket_rate_limit(websocket):
+                return
+
             await websocket.accept()
             listener = None
             try:
