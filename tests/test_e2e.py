@@ -267,7 +267,7 @@ class TestAPIEndToEnd:
             assert data_lines[-1] == "[DONE]"
 
             chunks = [json.loads(line) for line in data_lines[:-1]]
-            assert len(chunks) >= 2
+            assert len(chunks) == 3
 
             first_chunk = chunks[0]
             assert first_chunk["object"] == "chat.completion.chunk"
@@ -276,13 +276,11 @@ class TestAPIEndToEnd:
             assert first_chunk["choices"][0]["delta"] == {"content": "Hello"}
             assert first_chunk["choices"][0]["finish_reason"] is None
 
-            assert any(
-                chunk["choices"][0]["delta"] == {"content": " world"}
-                and chunk["choices"][0]["finish_reason"] is None
-                for chunk in chunks[:-1]
-            )
+            second_chunk = chunks[1]
+            assert second_chunk["choices"][0]["delta"] == {"content": " world"}
+            assert second_chunk["choices"][0]["finish_reason"] is None
 
-            final_chunk = chunks[-1]
+            final_chunk = chunks[2]
             assert final_chunk["choices"][0]["delta"] == {}
             assert final_chunk["choices"][0]["finish_reason"] == "stop"
 
