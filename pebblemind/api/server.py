@@ -286,19 +286,19 @@ class APIServer:
                 if request.top_k:
                     gen_params["top_k"] = request.top_k
 
-                 if request.stream:
-                     # Streaming response
-                     return StreamingResponse(
-                         self._stream_chat_completion(
-                             user_message,
+                if request.stream:
+                    # Streaming response
+                    return StreamingResponse(
+                        self._stream_chat_completion(
+                            user_message,
                             system_prompt,
                             request.model,
-                             raw_request,
-                             **gen_params
-                         ),
-                         media_type="text/event-stream"
-                     )
-                 else:
+                            raw_request,
+                            **gen_params
+                        ),
+                        media_type="text/event-stream"
+                    )
+                else:
                     # Regular response
                     start_time = time.time()
 
