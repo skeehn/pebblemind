@@ -448,6 +448,115 @@ class TestAPIEndToEnd:
             pytest.skip("API dependencies not available")
 
     @pytest.mark.asyncio
+    async def test_chat_completion_returns_400_for_missing_user_message(self):
+        """Test chat completion preserves validation errors for missing user input"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock, AsyncMock
+
+            config = APIConfig()
+            mock_mind = Mock()
+            mock_mind.query = AsyncMock(return_value="unused")
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "pebblemind-chat",
+                    "messages": [{"role": "system", "content": "Only system prompt"}]
+                }
+            )
+
+            assert response.status_code == 400
+            assert response.json()["detail"] == "No user message found"
+
+            print("✓ Chat completion validation errors are preserved")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_transcription_returns_400_when_audio_file_missing(self):
+        """Test transcription preserves validation errors for missing uploads"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            config = APIConfig()
+            mock_mind = Mock()
+            mock_mind.voice_processor = Mock()
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            response = client.post("/v1/audio/transcriptions", data={})
+
+            assert response.status_code == 400
+            assert response.json()["detail"] == "No audio file provided"
+
+            print("✓ Transcription validation errors are preserved")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_transcription_returns_400_for_invalid_file_type(self):
+        """Test transcription rejects unsupported file content types"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            config = APIConfig()
+            mock_mind = Mock()
+            mock_mind.voice_processor = Mock()
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            response = client.post(
+                "/v1/audio/transcriptions",
+                files={"file": ("test.txt", b"not audio", "text/plain")},
+            )
+
+            assert response.status_code == 400
+            assert "Invalid file type" in response.json()["detail"]
+
+            print("✓ Transcription file type validation works")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_speech_returns_400_when_text_missing(self):
+        """Test speech preserves validation errors for missing text"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            config = APIConfig()
+            mock_mind = Mock()
+            mock_mind.voice_processor = Mock()
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            response = client.post("/v1/audio/speech", json={})
+
+            assert response.status_code == 400
+            assert response.json()["detail"] == "No text provided"
+
+            print("✓ Speech validation errors are preserved")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
     async def test_security_headers_present(self):
         """Test that security headers are properly set"""
         try:

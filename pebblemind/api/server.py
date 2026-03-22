@@ -332,6 +332,8 @@ class APIServer:
                         )
                     )
 
+            except HTTPException:
+                raise
             except Exception as e:
                 logger.error(f"Chat completion failed: {e}", exc_info=True)
                 raise HTTPException(
@@ -385,6 +387,8 @@ class APIServer:
                     "text": transcription
                 }
 
+            except HTTPException:
+                raise
             except Exception as e:
                 logger.error(f"Transcription failed: {e}", exc_info=True)
                 raise HTTPException(
@@ -419,6 +423,8 @@ class APIServer:
                     headers={"Content-Disposition": "attachment; filename=speech.wav"}
                 )
 
+            except HTTPException:
+                raise
             except Exception as e:
                 logger.error(f"Speech generation failed: {e}", exc_info=True)
                 raise HTTPException(
