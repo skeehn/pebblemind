@@ -364,6 +364,9 @@ class TestAPIEndToEnd:
             from unittest.mock import Mock
 
             async def mock_stream(*args, **kwargs):
+                # Keep this as an async generator so it matches generate_stream's interface.
+                if False:
+                    yield ""
                 raise RuntimeError("stream failed")
 
             config = APIConfig()

@@ -209,6 +209,7 @@ class RAGSystem:
         Short tokenized words below the minimum length are dropped, but if that
         would remove everything and the original query is non-empty, the raw
         lowercased query is preserved so fallback search can still attempt a match.
+        Empty queries return an empty term list.
         """
         terms = [
             term
