@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import json
+import inspect
 import time
 from collections import defaultdict
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
@@ -199,6 +200,18 @@ class APIServer:
         except HTTPException as exc:
             await websocket.close(code=4429, reason=exc.detail)
             return False
+
+    async def _prepare_stream_inputs(self, message: str) -> tuple[str, List[str]]:
+        """Prepare streaming inputs when the PebbleMind instance exposes shared query preparation."""
+        prepare_inputs = getattr(type(self.pebblemind), "prepare_generation_inputs", None)
+        if prepare_inputs is None:
+            return message, []
+
+        prepared = prepare_inputs(self.pebblemind, message)
+        if inspect.isawaitable(prepared):
+            return await prepared
+
+        return prepared
 
     def _setup_middleware(self):
         """Setup CORS and other middleware"""
@@ -508,8 +521,10 @@ class APIServer:
 
                 listener = asyncio.create_task(cancel_listener())
 
+                message, context = await self._prepare_stream_inputs(message)
                 generator = self.pebblemind.llm_engine.generate_stream(
                     message,
+                    context=context,
                     system_prompt=system_prompt,
                     stop_event=stop_event,
                     **gen_params
@@ -551,8 +566,10 @@ class APIServer:
         watcher_task = asyncio.create_task(disconnect_watcher())
 
         try:
+            message, context = await self._prepare_stream_inputs(message)
             generator = self.pebblemind.llm_engine.generate_stream(
                 message,
+                context=context,
                 system_prompt=system_prompt,
                 stop_event=stop_event,
                 **kwargs

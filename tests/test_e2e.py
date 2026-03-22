@@ -292,6 +292,57 @@ class TestAPIEndToEnd:
             pytest.skip("API dependencies not available")
 
     @pytest.mark.asyncio
+    async def test_streaming_chat_completion_uses_prepared_query_inputs(self):
+        """Test streaming HTTP chat reuses PebbleMind query preparation"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            captured = {}
+
+            async def mock_stream(message, context=None, system_prompt=None, **kwargs):
+                captured["message"] = message
+                captured["context"] = context
+                captured["system_prompt"] = system_prompt
+                yield "Hello"
+
+            class FakePebbleMind:
+                def __init__(self):
+                    self.llm_engine = Mock()
+                    self.llm_engine.generate_stream = mock_stream
+
+                async def prepare_generation_inputs(self, message, **kwargs):
+                    return f"Enhanced: {message}", ["RAG context", "Memory context"]
+
+            config = APIConfig()
+            server = APIServer(config, FakePebbleMind())
+
+            client = TestClient(server.app)
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "pebblemind-chat",
+                    "messages": [
+                        {"role": "system", "content": "Be helpful"},
+                        {"role": "user", "content": "Hello"},
+                    ],
+                    "stream": True,
+                },
+            )
+
+            assert response.status_code == 200
+            assert captured["message"] == "Enhanced: Hello"
+            assert captured["context"] == ["RAG context", "Memory context"]
+            assert captured["system_prompt"] == "Be helpful"
+
+            print("✓ Streaming chat uses prepared query inputs")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
     async def test_websocket_chat_streams_tokens(self):
         """Test WebSocket chat streams tokens and completion events"""
         try:
@@ -319,6 +370,51 @@ class TestAPIEndToEnd:
                 assert websocket.receive_json() == {"event": "done"}
 
             print("✓ WebSocket chat streaming works")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_websocket_chat_uses_prepared_query_inputs(self):
+        """Test WebSocket chat reuses PebbleMind query preparation"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            captured = {}
+
+            async def mock_stream(message, context=None, system_prompt=None, stop_event=None, **kwargs):
+                captured["message"] = message
+                captured["context"] = context
+                captured["system_prompt"] = system_prompt
+                captured["stop_event"] = stop_event
+                yield "Hello"
+
+            class FakePebbleMind:
+                def __init__(self):
+                    self.llm_engine = Mock()
+                    self.llm_engine.generate_stream = mock_stream
+
+                async def prepare_generation_inputs(self, message, **kwargs):
+                    return f"Enhanced: {message}", ["RAG context", "Memory context"]
+
+            config = APIConfig()
+            server = APIServer(config, FakePebbleMind())
+
+            client = TestClient(server.app)
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_json({"message": "Hello", "system_prompt": "Be helpful"})
+                assert websocket.receive_json() == {"token": "Hello"}
+                assert websocket.receive_json() == {"event": "done"}
+
+            assert captured["message"] == "Enhanced: Hello"
+            assert captured["context"] == ["RAG context", "Memory context"]
+            assert captured["system_prompt"] == "Be helpful"
+            assert captured["stop_event"] is not None
+
+            print("✓ WebSocket chat uses prepared query inputs")
 
         except ImportError:
             pytest.skip("API dependencies not available")

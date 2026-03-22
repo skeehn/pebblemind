@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from pathlib import Path
 
 from .config import Config, get_config
@@ -217,31 +217,13 @@ class PebbleMind:
                 
                 return response
 
-            # Retrieve relevant context from long-term memory if enabled
-            memory_context = []
-            if use_memory:
-                memory_context = await self.memory_manager.retrieve_relevant_context(
-                    query=message,
-                    max_memories=3  # Limit to prevent memory overload
-                )
-            
-            # Combine RAG and memory contexts
-            combined_context = []
-            if use_rag and self.rag_system:
-                relevant_docs = await self.rag_system.search(message, k=self.config.rag.max_results)
-                rag_context = [doc["content"] for doc in relevant_docs]
-                combined_context.extend(rag_context)
-            
-            combined_context.extend(memory_context)
-            
-            # Enhance reasoning if requested
-            if enhance_reasoning:
-                from .reasoning_enhancer import ReasoningType
-                reasoning_enum = ReasoningType[reasoning_type.upper()] if reasoning_type.upper() in ReasoningType.__members__ else ReasoningType.ANALYTICAL
-                enhanced_query_data = await self.reasoning_enhancer.apply_reasoning_pipeline(
-                    message, combined_context, reasoning_enum
-                )
-                message = enhanced_query_data["enhanced_query"]
+            message, combined_context = await self.prepare_generation_inputs(
+                message,
+                use_rag=use_rag,
+                enhance_reasoning=enhance_reasoning,
+                reasoning_type=reasoning_type,
+                use_memory=use_memory,
+            )
             
             # Generate response using LLM
             if self.llm_engine:
@@ -314,6 +296,46 @@ class PebbleMind:
                 )
             
             raise
+
+    async def prepare_generation_inputs(
+        self,
+        message: str,
+        use_rag: bool = True,
+        enhance_reasoning: bool = True,
+        reasoning_type: Optional[str] = "analytical",
+        use_memory: bool = True,
+    ) -> Tuple[str, List[str]]:
+        """Prepare message and context for LLM generation."""
+        if not self._initialized:
+            await self.initialize()
+
+        # Retrieve relevant context from long-term memory if enabled
+        memory_context = []
+        if use_memory:
+            memory_context = await self.memory_manager.retrieve_relevant_context(
+                query=message,
+                max_memories=3  # Limit to prevent memory overload
+            )
+
+        # Combine RAG and memory contexts
+        combined_context = []
+        if use_rag and self.rag_system:
+            relevant_docs = await self.rag_system.search(message, k=self.config.rag.max_results)
+            rag_context = [doc["content"] for doc in relevant_docs]
+            combined_context.extend(rag_context)
+
+        combined_context.extend(memory_context)
+
+        # Enhance reasoning if requested
+        if enhance_reasoning:
+            from .reasoning_enhancer import ReasoningType
+            reasoning_enum = ReasoningType[reasoning_type.upper()] if reasoning_type.upper() in ReasoningType.__members__ else ReasoningType.ANALYTICAL
+            enhanced_query_data = await self.reasoning_enhancer.apply_reasoning_pipeline(
+                message, combined_context, reasoning_enum
+            )
+            message = enhanced_query_data["enhanced_query"]
+
+        return message, combined_context
 
     def _contains_tool_syntax(self, text: str) -> bool:
         """Check if text contains potential tool calls"""
