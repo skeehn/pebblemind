@@ -227,6 +227,69 @@ class TestAPIEndToEnd:
             pytest.skip("API dependencies not available")
 
     @pytest.mark.asyncio
+    async def test_streaming_chat_completion_format(self):
+        """Test streaming responses use OpenAI-compatible SSE chunks"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            async def mock_stream(*args, **kwargs):
+                yield "Hello"
+                yield " world"
+
+            config = APIConfig()
+            mock_mind = Mock()
+            mock_mind.llm_engine = Mock()
+            mock_mind.llm_engine.generate_stream = mock_stream
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "pebblemind-chat",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": True,
+                },
+            )
+
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+
+            data_lines = [
+                line[6:]
+                for line in response.text.splitlines()
+                if line.startswith("data: ")
+            ]
+
+            assert data_lines[-1] == "[DONE]"
+
+            chunks = [json.loads(line) for line in data_lines[:-1]]
+            assert len(chunks) == 3
+
+            first_chunk = chunks[0]
+            assert first_chunk["object"] == "chat.completion.chunk"
+            assert first_chunk["model"] == "pebblemind-chat"
+            assert first_chunk["choices"][0]["index"] == 0
+            assert first_chunk["choices"][0]["delta"] == {"content": "Hello"}
+            assert first_chunk["choices"][0]["finish_reason"] is None
+
+            second_chunk = chunks[1]
+            assert second_chunk["choices"][0]["delta"] == {"content": " world"}
+            assert second_chunk["choices"][0]["finish_reason"] is None
+
+            final_chunk = chunks[2]
+            assert final_chunk["choices"][0]["delta"] == {}
+            assert final_chunk["choices"][0]["finish_reason"] == "stop"
+
+            print("✓ Streaming SSE format is OpenAI-compatible")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
     async def test_rate_limiting_works(self):
         """Test rate limiting prevents abuse"""
         try:
