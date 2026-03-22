@@ -220,6 +220,7 @@ class RAGSystem:
         if not terms and query.strip():
             terms = [query.strip().lower()]
 
+        # Preserve first-seen order while dropping duplicate terms.
         return list(dict.fromkeys(terms))
 
     async def add_documents(self, documents: List[Dict[str, Any]]) -> None:
