@@ -212,6 +212,7 @@ class RAGSystem:
         lowercased query is preserved so fallback search can still attempt a match.
         Empty queries return an empty term list.
         """
+        # Extract lowercase alphanumeric tokens that meet the minimum fallback term length.
         terms = [
             term
             for term in re.findall(r"\b\w+\b", query.lower())

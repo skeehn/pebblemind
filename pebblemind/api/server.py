@@ -6,7 +6,7 @@ import json
 import inspect
 import time
 from collections import defaultdict
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, TYPE_CHECKING, Tuple
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect, Header, status
@@ -201,13 +201,20 @@ class APIServer:
             await websocket.close(code=4429, reason=exc.detail)
             return False
 
-    async def _prepare_stream_inputs(self, message: str) -> tuple[str, List[str]]:
-        """Prepare streaming inputs when the PebbleMind instance exposes shared query preparation."""
+    async def _prepare_stream_inputs(self, message: str) -> Tuple[str, List[str]]:
+        """Prepare streaming inputs using the default PebbleMind query-preparation settings."""
         prepare_inputs = getattr(type(self.pebblemind), "prepare_generation_inputs", None)
         if prepare_inputs is None:
             return message, []
 
-        prepared = prepare_inputs(self.pebblemind, message)
+        prepared = prepare_inputs(
+            self.pebblemind,
+            message,
+            use_rag=True,
+            enhance_reasoning=True,
+            reasoning_type="analytical",
+            use_memory=True,
+        )
         if inspect.isawaitable(prepared):
             return await prepared
 

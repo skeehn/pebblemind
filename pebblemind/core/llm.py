@@ -16,6 +16,7 @@ from ..config import LLMConfig
 
 logger = logging.getLogger(__name__)
 
+# Fallback system prompt used when callers do not provide a custom system prompt.
 DEFAULT_SYSTEM_PROMPT = (
     "You are PebbleMind, a highly efficient AI assistant running on lightweight hardware. "
     "Provide concise, accurate responses with clear reasoning. "
