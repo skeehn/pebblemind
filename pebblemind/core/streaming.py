@@ -66,5 +66,13 @@ async def websocket_stream(
     except WebSocketDisconnect:
         if stop_event:
             stop_event.set()
+    except Exception as e:
+        await websocket.send_json(
+            {"error": {"message": str(e), "type": "internal_error"}}
+        )
     finally:
-        await websocket.send_json({"event": "done"})
+        try:
+            await websocket.send_json({"event": "done"})
+        except WebSocketDisconnect:
+            if stop_event:
+                stop_event.set()

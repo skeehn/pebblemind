@@ -292,6 +292,107 @@ class TestAPIEndToEnd:
             pytest.skip("API dependencies not available")
 
     @pytest.mark.asyncio
+    async def test_websocket_chat_streams_tokens(self):
+        """Test WebSocket chat streams tokens and completion events"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            async def mock_stream(*args, **kwargs):
+                yield "Hello"
+                yield " world"
+
+            config = APIConfig()
+            mock_mind = Mock()
+            mock_mind.llm_engine = Mock()
+            mock_mind.llm_engine.generate_stream = mock_stream
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_json({"message": "Hello"})
+
+                assert websocket.receive_json() == {"token": "Hello"}
+                assert websocket.receive_json() == {"token": " world"}
+                assert websocket.receive_json() == {"event": "done"}
+
+            print("✓ WebSocket chat streaming works")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_websocket_chat_validates_empty_messages(self):
+        """Test WebSocket chat rejects empty messages"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            config = APIConfig()
+            mock_mind = Mock()
+            mock_mind.llm_engine = Mock()
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_json({"message": "   "})
+                error = websocket.receive_json()
+
+            assert error == {
+                "error": {
+                    "message": "No message provided",
+                    "type": "validation_error",
+                }
+            }
+
+            print("✓ WebSocket empty message validation works")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
+    async def test_websocket_chat_reports_generation_errors(self):
+        """Test WebSocket chat reports generator failures to the client"""
+        try:
+            from fastapi.testclient import TestClient
+            from pebblemind.api.server import APIServer
+            from pebblemind.config import APIConfig
+            from unittest.mock import Mock
+
+            async def mock_stream(*args, **kwargs):
+                raise RuntimeError("stream failed")
+                yield
+
+            config = APIConfig()
+            mock_mind = Mock()
+            mock_mind.llm_engine = Mock()
+            mock_mind.llm_engine.generate_stream = mock_stream
+            server = APIServer(config, mock_mind)
+
+            client = TestClient(server.app)
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_json({"message": "Hello"})
+                error = websocket.receive_json()
+                done = websocket.receive_json()
+
+            assert error == {
+                "error": {
+                    "message": "stream failed",
+                    "type": "internal_error",
+                }
+            }
+            assert done == {"event": "done"}
+
+            print("✓ WebSocket generation errors are reported")
+
+        except ImportError:
+            pytest.skip("API dependencies not available")
+
+    @pytest.mark.asyncio
     async def test_rate_limiting_works(self):
         """Test rate limiting prevents abuse"""
         try:

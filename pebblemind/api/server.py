@@ -429,10 +429,17 @@ class APIServer:
         @self.app.websocket("/ws/chat")
         async def websocket_chat(websocket: WebSocket):
             await websocket.accept()
+            listener = None
             try:
                 data = await websocket.receive_json()
-                message = data.get("message", "")
+                message = data.get("message", "").strip()
                 system_prompt = data.get("system_prompt")
+
+                if not message:
+                    await websocket.send_json(
+                        {"error": {"message": "No message provided", "type": "validation_error"}}
+                    )
+                    return
 
                 gen_params = {}
                 for param in ["max_tokens", "temperature", "top_p", "top_k"]:
@@ -461,9 +468,23 @@ class APIServer:
                 )
 
                 await websocket_stream(websocket, generator, stop_event)
-                listener.cancel()
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected")
+            except Exception as e:
+                logger.error(f"WebSocket chat failed: {e}", exc_info=True)
+                try:
+                    await websocket.send_json(
+                        {"error": {"message": str(e), "type": "internal_error"}}
+                    )
+                except WebSocketDisconnect:
+                    logger.info("WebSocket disconnected while sending error response")
+            finally:
+                if listener is not None and not listener.done():
+                    listener.cancel()
+                    try:
+                        await listener
+                    except asyncio.CancelledError:
+                        pass
 
 
     async def _stream_chat_completion(
