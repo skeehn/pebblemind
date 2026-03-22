@@ -23,6 +23,7 @@ from ..core.streaming import sse_stream, websocket_stream, websocket_internal_er
 from ..config import APIConfig
 
 logger = logging.getLogger(__name__)
+DISCONNECT_POLL_INTERVAL = 0.05
 
 # Security scheme
 security = HTTPBearer(auto_error=False)
@@ -261,7 +262,13 @@ class APIServer:
             await recorded
 
     def _get_pebblemind_hook(self, hook_name: str):
-        """Return explicitly defined PebbleMind hooks without triggering Mock fallback attributes."""
+        """Return real PebbleMind hooks while ignoring dynamic Mock fallback attributes.
+
+        Some API tests pass plain ``Mock()`` instances as the PebbleMind dependency.
+        Direct ``getattr(mock, name)`` access fabricates placeholder attributes even when
+        the hook was never defined, so this helper only accepts explicitly provided
+        instance hooks or actual class methods.
+        """
         instance_hooks = getattr(self.pebblemind, "__dict__", {})
         if hook_name in instance_hooks:
             return instance_hooks[hook_name]
@@ -643,7 +650,7 @@ class APIServer:
                 if await raw_request.is_disconnected():
                     stop_event.set()
                     break
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(DISCONNECT_POLL_INTERVAL)
 
         watcher_task = asyncio.create_task(disconnect_watcher())
 

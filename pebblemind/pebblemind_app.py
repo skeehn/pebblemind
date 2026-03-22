@@ -346,7 +346,7 @@ class PebbleMind:
         start_time: Optional[float] = None,
     ) -> None:
         """Persist side effects for a completed interaction."""
-        total_time = max(time.time() - start_time, 0.0) if start_time is not None else 0.0
+        total_time = (time.time() - start_time) if start_time is not None else 0.0
 
         if use_memory and getattr(self, "memory_manager", None):
             await self.memory_manager.store_conversation_memory(
@@ -377,7 +377,7 @@ class PebbleMind:
     ) -> None:
         """Record a failed interaction for self-improvement learning."""
         if learn_from_interaction and hasattr(self, 'self_improvement_manager'):
-            total_time = max(time.time() - start_time, 0.0) if start_time is not None else 0.0
+            total_time = (time.time() - start_time) if start_time is not None else 0.0
             await self.self_improvement_manager.process_interaction(
                 message,
                 f"Error occurred: {str(error)}",
