@@ -770,3 +770,26 @@ class APIServer:
             logger.info("Stopping API server...")
             await self.server.shutdown()
             self.server = None
+
+
+def main() -> None:
+    """Console-script entry point: launch the OpenAI-compatible API server.
+
+    Wired to the ``pebblemind-api`` script in pyproject.toml. Boots a local
+    PebbleMind instance and serves it over HTTP using the configured APIConfig.
+    """
+    import asyncio
+
+    from ..config import get_config
+    from ..pebblemind_app import quick_start
+
+    pebblemind = quick_start()
+    server = APIServer(config=get_config().api, pebblemind=pebblemind)
+    try:
+        asyncio.run(server.start())
+    except KeyboardInterrupt:
+        logger.info("API server stopped")
+
+
+if __name__ == "__main__":
+    main()

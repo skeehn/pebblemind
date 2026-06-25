@@ -13,11 +13,11 @@ exclude = ["tests*", "desktop*", "data*", "docs*", "examples*", "scripts*"]
 [project]
 name = "pebblemind"
 version = "0.1.0"
-description = "World's Smallest Intelligent Reasoning Model - CPU-First Local AI Assistant with Privacy-First Architecture"
+description = "CPU-first local AI assistant: run small LLMs, RAG, and an OpenAI-compatible API entirely on your own machine."
 readme = "README.md"
 license = "MIT"
 authors = [
-    {name = "PebbleMind Team", email = "team@pebblemind.ai"}
+    {name = "Stephen Keehn"}
 ]
 keywords = ["ai", "assistant", "local", "cpu", "privacy", "llm", "rag", "voice"]
 classifiers = [
@@ -76,8 +76,6 @@ pebblemind = "pebblemind.cli:main"
 pebblemind-api = "pebblemind.api.server:main"
 
 [project.urls]
-Homepage = "https://github.com/pebblemind/pebblemind"
-Documentation = "https://pebblemind.readthedocs.io/"
-Repository = "https://github.com/pebblemind/pebblemind"
-Issues = "https://github.com/pebblemind/pebblemind/issues"
-Changelog = "https://github.com/pebblemind/pebblemind/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/skeehn/pebblemind"
+Repository = "https://github.com/skeehn/pebblemind"
+Issues = "https://github.com/skeehn/pebblemind/issues"
