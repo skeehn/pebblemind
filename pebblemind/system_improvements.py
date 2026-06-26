@@ -1,6 +1,7 @@
 """System Improvements for Enhanced PebbleMind"""
 
 import asyncio
+import time
 import logging
 from typing import Dict, Any, Optional, List, Callable
 from pathlib import Path
@@ -25,14 +26,14 @@ class SystemHealthMonitor:
         """Update health status for a component"""
         self.component_health[component] = {
             "status": status,
-            "last_updated": asyncio.get_event_loop().time(),
+            "last_updated": time.monotonic(),
             "details": details or {}
         }
     
     def log_error(self, error: Exception, context: str = ""):
         """Log system errors for debugging and monitoring"""
         error_entry = {
-            "timestamp": asyncio.get_event_loop().time(),
+            "timestamp": time.monotonic(),
             "error": str(error),
             "context": context,
             "traceback": traceback.format_exc()
@@ -92,7 +93,7 @@ class ContextOptimizer:
         
         # Update context history
         self.context_history.append({
-            "timestamp": asyncio.get_event_loop().time(),
+            "timestamp": time.monotonic(),
             "context_count": len(optimized_context),
             "total_tokens": len(" ".join(optimized_context).split())
         })
@@ -306,7 +307,7 @@ class SystemImprovementManager:
         
         # Update health status
         self.health_monitor.update_component_health("pebblemind_enhanced", "healthy", {
-            "timestamp": asyncio.get_event_loop().time(),
+            "timestamp": time.monotonic(),
             "version": "enhanced_1.0"
         })
         

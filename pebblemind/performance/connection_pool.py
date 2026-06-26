@@ -1,6 +1,7 @@
 """Connection pooling for efficient resource management"""
 
 import asyncio
+import time
 from typing import Optional, Dict, Any, Callable, Generic, TypeVar
 from dataclasses import dataclass
 from datetime import datetime
@@ -142,7 +143,7 @@ class ConnectionPool(Generic[T]):
                 connection = await loop.run_in_executor(None, self.create_connection)
 
                 # Add to pool
-                now = asyncio.get_event_loop().time()
+                now = time.monotonic()
                 pooled = PooledConnection(
                     connection=connection,
                     created_at=now,
@@ -216,12 +217,12 @@ class ConnectionPool(Generic[T]):
         """
         conn_id = None
         pooled = None
-        start_time = asyncio.get_event_loop().time()
+        start_time = time.monotonic()
 
         try:
             while True:
                 # Calculate remaining timeout
-                current_time = asyncio.get_event_loop().time()
+                current_time = time.monotonic()
                 remaining = timeout - (current_time - start_time) if timeout else None
                 if timeout and remaining <= 0:
                     self._stats["wait_timeouts"] += 1
@@ -255,7 +256,7 @@ class ConnectionPool(Generic[T]):
                     # Mark as in use
                     pooled.in_use = True
                     pooled.use_count += 1
-                    pooled.last_used = asyncio.get_event_loop().time()
+                    pooled.last_used = time.monotonic()
 
                     if self.enable_stats:
                         self._stats["current_available"] -= 1
@@ -273,7 +274,7 @@ class ConnectionPool(Generic[T]):
                 async with self._lock:
                     if conn_id in self._pool:
                         pooled.in_use = False
-                        pooled.last_used = asyncio.get_event_loop().time()
+                        pooled.last_used = time.monotonic()
                         await self._available.put(conn_id)
 
                         if self.enable_stats:
@@ -293,7 +294,7 @@ class ConnectionPool(Generic[T]):
 
     async def _cleanup(self):
         """Remove idle or old connections"""
-        now = asyncio.get_event_loop().time()
+        now = time.monotonic()
 
         async with self._lock:
             to_close = []

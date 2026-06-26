@@ -83,6 +83,19 @@ class _FallbackLLMEngine:
     async def cleanup(self) -> None:
         self._initialized = False
 
+    async def get_model_info(self) -> dict:
+        """Report fallback status (no GGUF model is loaded)."""
+        return {
+            "status": "fallback",
+            "model_name": "fallback",
+            "model_size": "n/a",
+            "backend": "lightweight-fallback",
+            "note": (
+                "No local model loaded — using built-in fallback responses. "
+                "Install llama-cpp-python and a GGUF model for real inference."
+            ),
+        }
+
 
 class PebbleMind:
     """Main PebbleMind AI Assistant class"""

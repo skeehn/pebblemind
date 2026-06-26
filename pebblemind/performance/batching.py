@@ -1,6 +1,7 @@
 """Request batching system for efficient processing of multiple requests"""
 
 import asyncio
+import time
 from typing import List, Callable, Any, Optional, Dict, TypeVar, Generic
 from dataclasses import dataclass
 from datetime import datetime
@@ -134,7 +135,7 @@ class RequestBatcher(Generic[T, R]):
         request = BatchRequest(
             data=data,
             future=future,
-            timestamp=asyncio.get_event_loop().time(),
+            timestamp=time.monotonic(),
             priority=priority if self.enable_priority else 0
         )
 

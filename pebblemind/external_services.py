@@ -1,6 +1,7 @@
 """External Services Integration for PebbleMind"""
 
 import asyncio
+import time
 import json
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
@@ -336,7 +337,7 @@ class ServiceIntegrationManager:
             "service_type": service_type,
             "config": config,
             "result": result,
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": time.monotonic()
         })
         
         return result

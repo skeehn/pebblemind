@@ -114,6 +114,14 @@ def chat(ctx: click.Context, model: Optional[str], model_size: Optional[str], in
     try:
         pebblemind = quick_start()
 
+        # Warn when no real model is loaded, so fallback responses aren't
+        # mistaken for real inference.
+        if type(pebblemind.llm_engine).__name__ == "_FallbackLLMEngine":
+            console.print(
+                "[yellow]⚠ No local model loaded — running in limited fallback "
+                "mode. Install a model for real answers (see INSTALLATION.md).[/yellow]"
+            )
+
         if message:
             # Single message mode
             async def single_query():
@@ -344,6 +352,13 @@ def stats(ctx: click.Context):
 
     try:
         pebblemind = quick_start()
+
+        if pebblemind.rag_system is None:
+            console.print(
+                "[yellow]RAG system is disabled[/yellow] — install the vector-search "
+                "extras to enable it:\n  pip install sentence-transformers sqlite-vec"
+            )
+            return
 
         async def get_stats():
             return await pebblemind.rag_system.get_stats()

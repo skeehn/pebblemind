@@ -67,6 +67,12 @@ See [INSTALLATION.md](INSTALLATION.md) for full setup. Summary:
 3. Create configuration file
 4. Run!
 
+> **Python version:** `llama-cpp-python` ships prebuilt wheels for Python
+> 3.10–3.12. On 3.13+, pip builds it from source, which needs a C/C++ toolchain
+> (`cmake` + a compiler) — if the install fails, use Python 3.10–3.12 (or install
+> the build tools first). The pure-Python core (CLI, RAG, cache, tests) runs on
+> any 3.10+ without llama-cpp.
+
 ```python
 import asyncio
 from pebblemind.config import LLMConfig
@@ -331,8 +337,8 @@ See existing tests for examples. PRs appreciated!
 
 - [INSTALLATION.md](INSTALLATION.md) - Detailed setup guide
 - [QUICKSTART.md](QUICKSTART.md) - 5-minute tutorial
-- [TESTING_REPORT.md](TESTING_REPORT.md) - Test coverage details
-- [PROJECT_SHOWCASE.md](PROJECT_SHOWCASE.md) - Technical deep-dive
+- [HOW_IT_WORKS.md](HOW_IT_WORKS.md) - Architecture & technical deep-dive
+- [SECURITY.md](SECURITY.md) - Security model
 
 ## Support
 
