@@ -43,6 +43,217 @@ def cli(ctx: click.Context, config: Optional[str], verbose: bool):
         logging.basicConfig(level=logging.DEBUG)
 
 
+@cli.group()
+def config_cmd():
+    """Manage configuration"""
+    pass
+
+
+@config_cmd.command("show")
+@click.pass_context
+def config_show(ctx: click.Context):
+    """Show current configuration"""
+    config = ctx.obj["config"]
+    
+    console.print("\n[bold blue]PebbleMind Configuration[/bold blue]")
+    console.print("=" * 50)
+    
+    console.print("\n[bold]LLM Settings:[/bold]")
+    console.print(f"  Model Path: {config.llm.model_path or '[dim]Not set[/dim]'}")
+    console.print(f"  Model Size: {config.llm.model_size}")
+    console.print(f"  Context Length: {config.llm.context_length}")
+    console.print(f"  Temperature: {config.llm.temperature}")
+    console.print(f"  Max Tokens: {config.llm.max_tokens}")
+    console.print(f"  GPU Layers: {config.llm.gpu_layers}")
+    
+    console.print("\n[bold]Cache Settings:[/bold]")
+    console.print(f"  Enabled: {'✅' if config.cache.enabled else '❌'}")
+    console.print(f"  Max Size: {config.cache.max_size}")
+    console.print(f"  TTL: {config.cache.ttl}s")
+    
+    console.print("\n[bold]RAG Settings:[/bold]")
+    console.print(f"  Enabled: {'✅' if config.rag.enabled else '❌'}")
+    console.print(f"  Embedding Model: {config.rag.embedding_model}")
+    console.print(f"  Chunk Size: {config.rag.chunk_size}")
+    console.print(f"  Chunk Overlap: {config.rag.chunk_overlap}")
+    console.print(f"  Top K Results: {config.rag.top_k}")
+    
+    console.print("\n[bold]Paths:[/bold]")
+    console.print(f"  Data: {config.data_path}")
+    console.print(f"  Cache: {config.cache_path}")
+    console.print(f"  Config: {config.config_path}\n")
+
+
+@config_cmd.command("set")
+@click.argument("key")
+@click.argument("value")
+@click.pass_context
+def config_set(ctx: click.Context, key: str, value: str):
+    """Set configuration value"""
+    config = ctx.obj["config"]
+    
+    # Parse key path (e.g., "llm.temperature")
+    parts = key.split(".")
+    if len(parts) != 2:
+        console.print(f"[red]Invalid key format. Use: section.key (e.g., llm.temperature)[/red]")
+        return
+    
+    section, setting = parts
+    
+    try:
+        # Get the section object
+        if not hasattr(config, section):
+            console.print(f"[red]Unknown section: {section}[/red]")
+            return
+        
+        section_obj = getattr(config, section)
+        
+        if not hasattr(section_obj, setting):
+            console.print(f"[red]Unknown setting: {setting} in {section}[/red]")
+            return
+        
+        # Convert value to appropriate type
+        current_value = getattr(section_obj, setting)
+        if isinstance(current_value, bool):
+            value = value.lower() in ["true", "1", "yes", "on"]
+        elif isinstance(current_value, int):
+            value = int(value)
+        elif isinstance(current_value, float):
+            value = float(value)
+        
+        # Set the value
+        setattr(section_obj, setting, value)
+        
+        # Save configuration
+        config.save()
+        
+        console.print(f"[green]✓ Set {key} = {value}[/green]")
+        
+    except Exception as e:
+        console.print(f"[red]Error setting config: {e}[/red]")
+
+
+@cli.command()
+@click.pass_context
+def doctor(ctx: click.Context):
+    """Check system health and configuration"""
+    config = ctx.obj["config"]
+    
+    console.print("\n[bold blue]🏥 PebbleMind Health Check[/bold blue]")
+    console.print("=" * 50)
+    
+    issues = []
+    warnings = []
+    
+    # Check Python version
+    import sys
+    py_version = sys.version_info
+    console.print(f"\n[bold]Python:[/bold]")
+    if 3 <= py_version.major <= 3 and 10 <= py_version.minor <= 12:
+        console.print(f"  ✅ Version {py_version.major}.{py_version.minor}.{py_version.micro}")
+    elif py_version.minor == 13:
+        console.print(f"  ⚠️  Version {py_version.major}.{py_version.minor}.{py_version.micro} (llama-cpp-python may need build tools)")
+        warnings.append("Python 3.13 requires C++ build tools for llama-cpp-python")
+    else:
+        console.print(f"  ❌ Version {py_version.major}.{py_version.minor}.{py_version.micro} (need 3.10-3.12)")
+        issues.append("Python version not in recommended range (3.10-3.12)")
+    
+    # Check dependencies
+    console.print(f"\n[bold]Dependencies:[/bold]")
+    deps_ok = True
+    
+    try:
+        import llama_cpp
+        console.print(f"  ✅ llama-cpp-python installed")
+    except ImportError:
+        console.print(f"  ❌ llama-cpp-python not found")
+        issues.append("llama-cpp-python not installed")
+        deps_ok = False
+    
+    try:
+        import numpy
+        console.print(f"  ✅ numpy installed")
+    except ImportError:
+        console.print(f"  ⚠️  numpy not found")
+        warnings.append("numpy recommended for better performance")
+    
+    try:
+        import scipy
+        console.print(f"  ✅ scipy installed")
+    except ImportError:
+        console.print(f"  ⚠️  scipy not found")
+        warnings.append("scipy recommended for RAG")
+    
+    # Check model
+    console.print(f"\n[bold]Model:[/bold]")
+    if config.llm.model_path:
+        model_path = Path(config.llm.model_path).expanduser()
+        if model_path.exists():
+            size_gb = model_path.stat().st_size / (1024**3)
+            console.print(f"  ✅ Model found: {model_path}")
+            console.print(f"     Size: {size_gb:.2f} GB")
+        else:
+            console.print(f"  ❌ Model not found: {model_path}")
+            issues.append(f"Model file missing: {model_path}")
+    else:
+        console.print(f"  ⚠️  No model configured")
+        warnings.append("No model path set in configuration")
+    
+    # Check paths
+    console.print(f"\n[bold]Paths:[/bold]")
+    data_path = Path(config.data_path).expanduser()
+    cache_path = Path(config.cache_path).expanduser()
+    
+    if data_path.exists():
+        console.print(f"  ✅ Data directory: {data_path}")
+    else:
+        console.print(f"  ⚠️  Data directory will be created: {data_path}")
+    
+    if cache_path.exists():
+        console.print(f"  ✅ Cache directory: {cache_path}")
+    else:
+        console.print(f"  ⚠️  Cache directory will be created: {cache_path}")
+    
+    # Check disk space
+    import shutil
+    total, used, free = shutil.disk_usage(Path.home())
+    free_gb = free / (1024**3)
+    console.print(f"\n[bold]Disk Space:[/bold]")
+    if free_gb > 10:
+        console.print(f"  ✅ {free_gb:.1f} GB free")
+    elif free_gb > 5:
+        console.print(f"  ⚠️  {free_gb:.1f} GB free (models need 3-7 GB)")
+        warnings.append("Low disk space - may not fit larger models")
+    else:
+        console.print(f"  ❌ {free_gb:.1f} GB free (insufficient)")
+        issues.append("Not enough disk space for models")
+    
+    # Summary
+    console.print(f"\n[bold]Summary:[/bold]")
+    if not issues and not warnings:
+        console.print("  ✅ [green]All checks passed! System is healthy.[/green]")
+    elif issues:
+        console.print(f"  ❌ [red]{len(issues)} issue(s) found:[/red]")
+        for issue in issues:
+            console.print(f"     • {issue}")
+    elif warnings:
+        console.print(f"  ⚠️  [yellow]{len(warnings)} warning(s):[/yellow]")
+        for warning in warnings:
+            console.print(f"     • {warning}")
+    
+    # Next steps
+    if issues:
+        console.print(f"\n[bold]Next Steps:[/bold]")
+        console.print("  1. Fix critical issues above")
+        console.print("  2. See INSTALLATION.md for setup guide")
+        console.print("  3. Run 'pebblemind doctor' again to verify\n")
+    elif not config.llm.model_path:
+        console.print(f"\n[bold]Quick Start:[/bold]")
+        console.print("  1. Download a model (see INSTALLATION.md)")
+        console.print("  2. Set model path: pebblemind config set llm.model_path /path/to/model")
+        console.print("  3. Try: pebblemind chat 'Hello!'\n")
+
+
 @cli.command()
 @click.pass_context
 def status(ctx: click.Context):
