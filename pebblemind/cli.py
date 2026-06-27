@@ -16,6 +16,7 @@ from rich.spinner import Spinner
 
 from .core import PebbleMind, quick_start
 from .config import Config, load_config
+from .models import ModelManager
 
 console = Console()
 
@@ -41,6 +42,197 @@ def cli(ctx: click.Context, config: Optional[str], verbose: bool):
     if verbose:
         import logging
         logging.basicConfig(level=logging.DEBUG)
+
+
+@cli.group()
+def models():
+    """Manage language models"""
+    pass
+
+
+@models.command("list")
+@click.option("--catalog", is_flag=True, help="Show catalog of available models")
+@click.pass_context
+def models_list(ctx: click.Context, catalog: bool):
+    """List installed models or available models"""
+    config = ctx.obj["config"]
+    models_dir = Path(config.data_path) / "models"
+    manager = ModelManager(models_dir)
+    
+    if catalog:
+        # Show catalog of available models
+        console.print("\n[bold blue]📦 Available Models[/bold blue]")
+        console.print("=" * 70)
+        
+        from rich.table import Table
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("ID", style="dim")
+        table.add_column("Name")
+        table.add_column("Size", justify="right")
+        table.add_column("Speed")
+        table.add_column("Quality")
+        table.add_column("Status")
+        
+        for model_id, info in manager.list_catalog().items():
+            model_path = models_dir / info["filename"]
+            status = "✅ Installed" if model_path.exists() else "⬇️  Available"
+            
+            table.add_row(
+                model_id,
+                info["name"],
+                f"{info['size_gb']:.1f}GB",
+                info["speed"],
+                info["quality"],
+                status
+            )
+        
+        console.print(table)
+        console.print(f"\n[dim]Install with: pebblemind models install <id>[/dim]\n")
+        
+    else:
+        # Show installed models
+        installed = manager.list_installed()
+        
+        if not installed:
+            console.print("\n[yellow]No models installed yet.[/yellow]")
+            console.print("Browse available models: [cyan]pebblemind models list --catalog[/cyan]\n")
+            return
+        
+        console.print("\n[bold blue]💾 Installed Models[/bold blue]")
+        console.print("=" * 70)
+        
+        from rich.table import Table
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Name")
+        table.add_column("Size", justify="right")
+        table.add_column("Path", style="dim")
+        
+        for model in installed:
+            table.add_row(
+                model["name"],
+                f"{model['size_gb']:.2f}GB",
+                model["path"]
+            )
+        
+        console.print(table)
+        console.print()
+
+
+@models.command("install")
+@click.argument("model_id")
+@click.pass_context
+def models_install(ctx: click.Context, model_id: str):
+    """Install a model from the catalog"""
+    config = ctx.obj["config"]
+    models_dir = Path(config.data_path) / "models"
+    manager = ModelManager(models_dir)
+    
+    # Check if model exists in catalog
+    model_info = manager.get_model_info(model_id)
+    if not model_info:
+        console.print(f"[red]❌ Model '{model_id}' not found in catalog[/red]")
+        console.print("Available models: [cyan]pebblemind models list --catalog[/cyan]")
+        return
+    
+    # Check if already installed
+    if model_info["installed"]:
+        console.print(f"[yellow]Model already installed: {model_info['path']}[/yellow]")
+        return
+    
+    console.print(f"\n[bold blue]📥 Installing {model_info['name']}[/bold blue]")
+    console.print(f"Size: {model_info['size_gb']:.1f}GB")
+    console.print(f"Use case: {model_info['use_case']}\n")
+    
+    # Download with progress bar
+    from rich.progress import Progress, BarColumn, DownloadColumn, TimeRemainingColumn
+    
+    with Progress(
+        "[progress.description]{task.description}",
+        BarColumn(),
+        DownloadColumn(),
+        TimeRemainingColumn(),
+        console=console
+    ) as progress:
+        task_id = progress.add_task("Downloading...", total=model_info["size_gb"] * 1024**3)
+        
+        def update_progress(downloaded, total, percent):
+            progress.update(task_id, completed=downloaded)
+        
+        try:
+            model_path = manager.download(model_id, progress_callback=update_progress)
+            
+            console.print(f"\n[green]✅ Model installed successfully![/green]")
+            console.print(f"Path: {model_path}")
+            console.print(f"\n[bold]Set as active model:[/bold]")
+            console.print(f"  pebblemind config set llm.model_path {model_path}\n")
+            
+        except Exception as e:
+            console.print(f"\n[red]❌ Download failed: {e}[/red]")
+
+
+@models.command("info")
+@click.argument("model_id")
+@click.pass_context
+def models_info(ctx: click.Context, model_id: str):
+    """Show detailed information about a model"""
+    config = ctx.obj["config"]
+    models_dir = Path(config.data_path) / "models"
+    manager = ModelManager(models_dir)
+    
+    model_info = manager.get_model_info(model_id)
+    
+    if not model_info:
+        console.print(f"[red]❌ Model '{model_id}' not found in catalog[/red]")
+        return
+    
+    console.print(f"\n[bold blue]{model_info['name']}[/bold blue]")
+    console.print("=" * 50)
+    console.print(f"\n[bold]ID:[/bold] {model_id}")
+    console.print(f"[bold]Size:[/bold] {model_info['size_gb']:.1f}GB")
+    console.print(f"[bold]Speed:[/bold] {model_info['speed']}")
+    console.print(f"[bold]Quality:[/bold] {model_info['quality']}")
+    console.print(f"[bold]Status:[/bold] {'✅ Installed' if model_info['installed'] else '⬇️  Not installed'}")
+    
+    if model_info["installed"]:
+        console.print(f"[bold]Path:[/bold] {model_info['path']}")
+        console.print(f"[bold]Actual Size:[/bold] {model_info['actual_size_gb']:.2f}GB")
+    
+    console.print(f"\n[bold]Description:[/bold]")
+    console.print(f"  {model_info['description']}")
+    console.print(f"\n[bold]Best for:[/bold]")
+    console.print(f"  {model_info['use_case']}")
+    
+    if not model_info["installed"]:
+        console.print(f"\n[dim]Install: pebblemind models install {model_id}[/dim]")
+    
+    console.print()
+
+
+@models.command("remove")
+@click.argument("model_id")
+@click.confirmation_option(prompt="Are you sure you want to remove this model?")
+@click.pass_context
+def models_remove(ctx: click.Context, model_id: str):
+    """Remove an installed model"""
+    config = ctx.obj["config"]
+    models_dir = Path(config.data_path) / "models"
+    manager = ModelManager(models_dir)
+    
+    model_info = manager.get_model_info(model_id)
+    
+    if not model_info:
+        console.print(f"[red]❌ Model '{model_id}' not found[/red]")
+        return
+    
+    if not model_info["installed"]:
+        console.print(f"[yellow]Model not installed[/yellow]")
+        return
+    
+    try:
+        manager.remove(model_info["path"])
+        console.print(f"[green]✅ Model removed: {model_info['name']}[/green]")
+    except Exception as e:
+        console.print(f"[red]❌ Error removing model: {e}[/red]")
 
 
 @cli.group()
