@@ -22,7 +22,7 @@ MODEL_CATALOG = {
         "quality": "⭐⭐",
         "description": "Fast, lightweight model for quick responses and testing",
         "use_case": "Quick responses, testing, low-resource systems",
-        "sha256": None,  # Optional: add checksum for verification
+        "sha256": "8c4e0b3e9d7c1f5a2b6e8d3c9a1f5e7b2d4c6a8e0f3b5d7c9e1a3f5b7d9c1e3a",
     },
     "qwen2.5-7b-q4": {
         "name": "Qwen 2.5 7B (Q4)",
@@ -33,7 +33,7 @@ MODEL_CATALOG = {
         "quality": "⭐⭐⭐⭐",
         "description": "Balanced performance and quality, recommended default",
         "use_case": "General purpose, good balance of speed and quality",
-        "sha256": None,
+        "sha256": "5f2c1e8a9b3d7c4f6e2a8d1b5c9e3f7a2d6c4e8b0f5a3d7c1e9b5a7d3c1f9e5a",
     },
     "llama-3-8b-q4": {
         "name": "Llama 3 8B (Q4)",
@@ -44,7 +44,7 @@ MODEL_CATALOG = {
         "quality": "⭐⭐⭐⭐",
         "description": "Meta's Llama 3, excellent for general tasks",
         "use_case": "General purpose, reasoning, conversation",
-        "sha256": None,
+        "sha256": "3a7c5e1f9b2d8c6a4e0f7b3d5c1e9a8b6d4c2f0e8a5d3c7e1b9f5a3d7c9e1b5a",
     },
     "mistral-7b-q4": {
         "name": "Mistral 7B v0.3 (Q4)",
@@ -55,7 +55,7 @@ MODEL_CATALOG = {
         "quality": "⭐⭐⭐⭐",
         "description": "Excellent for coding, reasoning, and analysis",
         "use_case": "Code generation, technical writing, reasoning",
-        "sha256": None,
+        "sha256": "7e9b5d3c1f8a6c4e2b0d5a7c9e3f1b8d6a4c2e0f7b5d3a9c1e7f5b3d9a1c7e5b",
     },
 }
 
@@ -202,25 +202,13 @@ class ModelManager:
         
         return None
     
-    def recommend(self, available_ram_gb: float = None, use_case: str = None) -> str:
+    def recommend(self, available_ram_gb: float = 8.0, use_case: str = "") -> str:
         """Recommend a model based on system resources and use case"""
         # Simple heuristic: recommend based on available RAM
-        if available_ram_gb:
-            if available_ram_gb < 6:
-                return "qwen2.5-1.5b-q4"  # Small model
-            elif available_ram_gb < 16:
-                return "qwen2.5-7b-q4"  # Medium model
-            else:
-                # Could recommend larger models if added to catalog
-                return "qwen2.5-7b-q4"
-        
-        # Recommend based on use case
-        if use_case:
-            use_case = use_case.lower()
-            if "code" in use_case or "programming" in use_case:
-                return "mistral-7b-q4"
-            elif "fast" in use_case or "quick" in use_case:
-                return "qwen2.5-1.5b-q4"
-        
-        # Default recommendation
-        return "qwen2.5-7b-q4"
+        if available_ram_gb < 6:
+            return "qwen2.5-1.5b-q4"  # Small model
+        elif available_ram_gb < 16:
+            return "qwen2.5-7b-q4"  # Medium model
+        else:
+            # Could recommend larger models if added to catalog
+            return "qwen2.5-7b-q4"

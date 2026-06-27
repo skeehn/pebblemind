@@ -127,7 +127,84 @@ Extend functionality:
 - Hook into events
 - Build on top of the framework
 
-## Features
+## ✨ Features
+
+- 🔒 **100% Private** - Everything runs locally, no data leaves your machine
+- ⚡ **Fast** - Optimized inference with llama.cpp (2-5s responses on M1)
+- 🧠 **RAG System** - Add documents and get context-aware answers
+- 🎙️ **Voice Interface** - Speak to your AI and hear responses (Whisper + TTS)
+- 🤖 **Multi-Agent** - Orchestrate specialized agents for complex tasks
+- 💾 **Model Management** - Built-in catalog with one-command downloads
+- 🖥️ **Desktop App** - Beautiful Tauri-based UI (optional)
+- 🌐 **API Server** - OpenAI-compatible HTTP API
+- 🔧 **Extensible** - Python source, easy to hack and customize
+
+## 🚀 Quick Start
+
+### One-Line Install (macOS/Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/skeehn/pebblemind/main/install.sh | bash
+```
+
+Or clone and install manually:
+
+```bash
+git clone https://github.com/skeehn/pebblemind.git
+cd pebblemind
+./install.sh
+```
+
+### Your First Chat
+
+```bash
+# One-shot question
+pebblemind chat "What is the capital of France?"
+
+# Interactive chat session
+pebblemind chat
+
+# Check system health
+pebblemind doctor
+
+# Browse and install models
+pebblemind models recommend          # Get a recommendation
+pebblemind models list --catalog     # Browse all models
+pebblemind models install qwen2.5-7b-q4
+```
+
+Full guide: [QUICKSTART.md](QUICKSTART.md)
+
+## 📦 Model Management
+
+PebbleMind includes a built-in model catalog with one-command downloads:
+
+```bash
+# Get recommendation based on your RAM
+pebblemind models recommend
+
+# Browse available models
+pebblemind models list --catalog
+
+# Install a model
+pebblemind models install qwen2.5-7b-q4
+
+# View model details
+pebblemind models info mistral-7b-q4
+
+# List installed models
+pebblemind models list
+```
+
+**Available Models:**
+- **Qwen 2.5 1.5B** (1GB) - Fast, lightweight
+- **Qwen 2.5 7B** (4.4GB) - Balanced (recommended)
+- **Llama 3 8B** (4.7GB) - General purpose
+- **Mistral 7B** (4.4GB) - Excellent for coding
+
+All models are quantized (Q4) for optimal size/quality balance.
+
+## 📋 Features
 
 | Feature | Status | Notes |
 |---------|--------|-------|

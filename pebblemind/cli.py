@@ -208,6 +208,46 @@ def models_info(ctx: click.Context, model_id: str):
     console.print()
 
 
+@models.command("recommend")
+@click.pass_context
+def models_recommend(ctx: click.Context):
+    """Get a model recommendation based on your system"""
+    import psutil
+    
+    config = ctx.obj["config"]
+    models_dir = Path(config.data_path) / "models"
+    manager = ModelManager(models_dir)
+    
+    # Get system info
+    ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+    available_ram_gb = psutil.virtual_memory().available / (1024 ** 3)
+    
+    console.print("\n[bold blue]💡 Model Recommendation[/bold blue]")
+    console.print("=" * 50)
+    console.print(f"\n[bold]System Info:[/bold]")
+    console.print(f"  Total RAM: {ram_gb:.1f}GB")
+    console.print(f"  Available RAM: {available_ram_gb:.1f}GB")
+    
+    # Get recommendation
+    recommended_id = manager.recommend(available_ram_gb=available_ram_gb)
+    model_info = manager.get_model_info(recommended_id)
+    
+    console.print(f"\n[bold]Recommended Model:[/bold] [cyan]{model_info['name']}[/cyan]")
+    console.print(f"  Size: {model_info['size_gb']:.1f}GB")
+    console.print(f"  Speed: {model_info['speed']}")
+    console.print(f"  Quality: {model_info['quality']}")
+    console.print(f"  Best for: {model_info['use_case']}")
+    
+    if model_info["installed"]:
+        console.print(f"\n[green]✅ Already installed![/green]")
+        console.print(f"  Path: {model_info['path']}")
+    else:
+        console.print(f"\n[yellow]⬇️  Not installed yet[/yellow]")
+        console.print(f"  Install: [cyan]pebblemind models install {recommended_id}[/cyan]")
+    
+    console.print()
+
+
 @models.command("remove")
 @click.argument("model_id")
 @click.confirmation_option(prompt="Are you sure you want to remove this model?")
