@@ -45,7 +45,7 @@ class _FallbackLLMEngine:
         **kwargs,
     ) -> str:
         """Generate a deterministic lightweight response without external model files."""
-        normalized_message = message.strip().lower()
+        normalized_message = self._intent_text(message)
 
         if "2+2" in normalized_message:
             return "2 + 2 equals 4."
@@ -79,6 +79,16 @@ class _FallbackLLMEngine:
                 break
             yield f"{token} "
             await asyncio.sleep(0)
+
+    @staticmethod
+    def _intent_text(message: str) -> str:
+        """Text used for intent matching: the last Question: line when the prompt
+        was reasoning-enhanced (it embeds prior context), else the full message."""
+        lines = [ln.strip() for ln in message.strip().splitlines() if ln.strip()]
+        for ln in reversed(lines):
+            if ln.lower().startswith("question:"):
+                return ln[len("question:"):].strip().lower()
+        return message.strip().lower()
 
     async def cleanup(self) -> None:
         self._initialized = False
@@ -118,7 +128,9 @@ class PebbleMind:
         self.reasoning_enhancer: ReasoningEnhancer = ReasoningEnhancer()
         
         # Advanced memory system
-        self.memory_manager: EnhancedMemoryManager = EnhancedMemoryManager()
+        self.memory_manager: EnhancedMemoryManager = EnhancedMemoryManager(
+            str(self.config.data_path / "longterm_memory.db")
+        )
         
         # Tool integration
         self.tool_manager: ToolManager = ToolManager()
@@ -288,6 +300,10 @@ class PebbleMind:
 
         start_time = time.time()
         
+        # Keep the original user message: memory + error records must store what the
+        # user actually said, not the reasoning-enhanced prompt (which already embeds
+        # prior context — storing it would compound context every session).
+        original_message = message
         try:
             # Check if message contains tool calls or requires complex task execution
             if use_tools and self._contains_tool_syntax(message):
@@ -305,7 +321,7 @@ class PebbleMind:
                     response = base_response
 
                 await self.finalize_interaction(
-                    message,
+                    original_message,
                     response,
                     use_memory=use_memory,
                     learn_from_interaction=learn_from_interaction,
@@ -353,7 +369,7 @@ class PebbleMind:
                     response = base_response
 
                 await self.finalize_interaction(
-                    message,
+                    original_message,
                     response,
                     use_memory=use_memory,
                     learn_from_interaction=learn_from_interaction,
@@ -367,7 +383,7 @@ class PebbleMind:
         except Exception as e:
             logger.error(f"Error processing query: {e}")
             await self.record_interaction_error(
-                message,
+                original_message,
                 e,
                 learn_from_interaction=learn_from_interaction,
                 start_time=start_time,

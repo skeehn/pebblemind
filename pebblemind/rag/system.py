@@ -84,7 +84,49 @@ class RAGSystem:
             raise
 
     async def _setup_embedding_model(self) -> None:
-        """Setup BGE-small embedding model"""
+        """Setup embedding model: sentence-transformers > ollama > zero-dep hash."""
+        from .embeddings import HashEmbedding, OllamaEmbedding
+
+        requested = (getattr(self.config, "embedding_backend", "auto") or "auto").lower()
+        if requested == "hash":
+            self.embedding_model = HashEmbedding(dim=self.config.embedding_dim)
+            logger.info("RAG using HashEmbedding fallback (dim=%d)", self.config.embedding_dim)
+            return
+        if requested == "ollama":
+            self.embedding_model = OllamaEmbedding(
+                model=getattr(self.config, "ollama_embed_model", "nomic-embed-text"),
+                host=getattr(self.config, "ollama_host", "http://localhost:11434"),
+            )
+            logger.info("RAG using Ollama embeddings (%s)", self.embedding_model.model)
+            return
+        if requested == "sentence-transformers":
+            if SentenceTransformer is None:
+                raise ImportError("sentence-transformers not installed. Install with: pip install sentence-transformers")
+            self._load_st_model()
+            return
+        # auto: ST if importable, else Ollama if reachable, else hash
+        if SentenceTransformer is not None:
+            try:
+                self._load_st_model()
+                return
+            except Exception as e:
+                logger.warning("sentence-transformers load failed (%s), trying next backend", e)
+        try:
+            from ..core.backends import ollama_is_available
+            if ollama_is_available(getattr(self.config, "ollama_host", "http://localhost:11434")):
+                self.embedding_model = OllamaEmbedding(
+                    model=getattr(self.config, "ollama_embed_model", "nomic-embed-text"),
+                    host=getattr(self.config, "ollama_host", "http://localhost:11434"),
+                )
+                logger.info("RAG using Ollama embeddings (auto)")
+                return
+        except Exception:
+            pass
+        self.embedding_model = HashEmbedding(dim=self.config.embedding_dim)
+        logger.info("RAG using HashEmbedding fallback (dim=%d)", self.config.embedding_dim)
+
+    def _load_st_model(self) -> None:
+        """Load sentence-transformers model (raises if unavailable)."""
         if SentenceTransformer is None:
             raise ImportError("sentence-transformers not installed. Install with: pip install sentence-transformers")
 

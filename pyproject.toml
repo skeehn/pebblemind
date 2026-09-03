@@ -32,14 +32,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 requires-python = ">=3.9"
+# Lightweight core: installable on any Mac with zero heavy ML wheels.
 dependencies = [
-    "llama-cpp-python>=0.2.90",
     "numpy>=1.24.0",
-    "scipy>=1.10.0",
-    "torch>=2.0.0",
-    "transformers>=4.30.0",
-    "sentence-transformers>=2.2.0",
-    "sqlite-vec>=0.1.0",
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
     "pydantic>=2.0.0",
@@ -52,6 +47,33 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+llm = [
+    "llama-cpp-python>=0.2.90",
+]
+hf = [
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "accelerate>=0.20.0",
+    "huggingface_hub>=0.20.0",
+]
+rag = [
+    "scipy>=1.10.0",
+    "sentence-transformers>=2.2.0",
+    "sqlite-vec>=0.1.0",
+]
+full = [
+    "llama-cpp-python>=0.2.90",
+    "scipy>=1.10.0",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "accelerate>=0.20.0",
+    "huggingface_hub>=0.20.0",
+    "sentence-transformers>=2.2.0",
+    "sqlite-vec>=0.1.0",
+]
+ollama = [
+    "httpx>=0.25.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

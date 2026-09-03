@@ -3,6 +3,11 @@
 
 # LLM (Large Language Model) Configuration
 llm:
+  backend: "auto"  # auto, ollama (best on Mac), llamacpp, huggingface, fallback
+  ollama_host: "http://localhost:11434"
+  ollama_model: "qwen2.5:1.5b"  # ollama pull qwen2.5:1.5b (or smollm2:135m, llama3.2:1b, ...)
+  hf_model_id: "Qwen/Qwen2.5-1.5B-Instruct"
+  hf_device: "auto"  # auto, cpu, mps, cuda
   model_path: ""  # Auto-detected based on model_size
   model_name: "Qwen2.5-3B-Instruct"
   model_size: "3b"  # Options: 1.5b (ultra-light), 3b (balanced), 7b (high-quality)
@@ -31,6 +36,9 @@ voice:
 
 # RAG (Retrieval-Augmented Generation) Configuration
 rag:
+  embedding_backend: "auto"  # auto, sentence-transformers, ollama, hash (zero-dep)
+  ollama_host: "http://localhost:11434"
+  ollama_embed_model: "nomic-embed-text"
   embedding_model: "BAAI/bge-small-en-v1.5"
   embedding_dim: 384
   vector_db_path: "./data/vectors.db"

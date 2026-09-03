@@ -57,11 +57,23 @@ class TestRAGSystem:
 
     @pytest.mark.asyncio
     async def test_initialize_without_sentence_transformers(self, rag_config):
-        """Test initialization fails without sentence-transformers"""
+        """Test explicit ST backend fails without sentence-transformers"""
+        rag_config.embedding_backend = "sentence-transformers"
         with patch('pebblemind.rag.system.SentenceTransformer', None):
             rag = RAGSystem(rag_config)
             with pytest.raises(ImportError, match="sentence-transformers not installed"):
                 await rag.initialize()
+
+    @pytest.mark.asyncio
+    async def test_initialize_hash_fallback(self, rag_config):
+        """Test zero-dep hash fallback initializes with no heavy deps"""
+        rag_config.embedding_backend = "hash"
+        with patch('pebblemind.rag.system.SentenceTransformer', None):
+            rag = RAGSystem(rag_config)
+            await rag.initialize()
+            assert rag._initialized is True
+            vec = rag.embedding_model.encode(["hello world"])
+            assert vec.shape == (1, 384)
 
     def test_chunk_text_basic(self, rag_config):
         """Test basic text chunking"""
