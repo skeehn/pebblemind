@@ -136,7 +136,11 @@ def ollama_is_available(host: str = OLLAMA_DEFAULT_HOST, timeout: float = 1.5) -
 
 
 def ollama_has_model(model: str, host: str = OLLAMA_DEFAULT_HOST, timeout: float = 5.0) -> bool:
-    """Return True if the model tag is already pulled in Ollama."""
+    """Return True if the model tag is already pulled in Ollama.
+
+    Tagged requests (name:tag) require an exact match — a pulled qwen2.5:3b
+    must not satisfy a request for qwen2.5:1.5b. Untagged names match any tag.
+    """
     try:
         import httpx
 
@@ -144,8 +148,10 @@ def ollama_has_model(model: str, host: str = OLLAMA_DEFAULT_HOST, timeout: float
         if r.status_code != 200:
             return False
         names = [m.get("name", "") for m in r.json().get("models", [])]
-        base = model.split(":")[0]
-        return any(n == model or n.startswith(base + ":") or n == base for n in names)
+        if ":" in model:
+            return model in names
+        base = model
+        return any(n == base or n.startswith(base + ":") for n in names)
     except Exception:
         return False
 

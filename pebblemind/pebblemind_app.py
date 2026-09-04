@@ -80,10 +80,19 @@ class _FallbackLLMEngine:
             yield f"{token} "
             await asyncio.sleep(0)
 
-    @staticmethod
-    def _intent_text(message: str) -> str:
+    # Marker emitted by ReasoningEnhancer.enhance_prompt; only prompts carrying
+    # it are treated as reasoning-enhanced wrappers.
+    _REASONING_WRAPPER_MARKER = "please think through this step by step:"
+
+    @classmethod
+    def _intent_text(cls, message: str) -> str:
         """Text used for intent matching: the last Question: line when the prompt
-        was reasoning-enhanced (it embeds prior context), else the full message."""
+        was reasoning-enhanced (it embeds prior context), else the full message.
+        The marker is only honored inside genuine enhancer output so arbitrary
+        user text containing 'Question:' is never misparsed."""
+        lowered = message.lower()
+        if cls._REASONING_WRAPPER_MARKER not in lowered:
+            return message.strip().lower()
         lines = [ln.strip() for ln in message.strip().splitlines() if ln.strip()]
         for ln in reversed(lines):
             if ln.lower().startswith("question:"):

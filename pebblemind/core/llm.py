@@ -8,6 +8,7 @@ when nothing is available so PebbleMind can degrade gracefully.
 
 import asyncio
 import logging
+import re
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 import os
@@ -151,8 +152,10 @@ class LLMEngine:
         requested = (getattr(self.config, "backend", "auto") or "auto").lower()
         if requested != "auto":
             return requested
-        # Auto: local GGUF file first (zero network, tests mock this path)
-        if self._gguf_available():
+        # Auto: local GGUF file first (zero network, tests mock this path).
+        # Only when llama-cpp-python is importable — otherwise fall through to
+        # Ollama/HF instead of failing later in _init_llamacpp.
+        if Llama is not None and self._gguf_available():
             return "llamacpp"
         # Then Ollama (best Mac path) — fast localhost probe only
         try:
@@ -379,20 +382,28 @@ class LLMEngine:
             ),
         )
 
-    async def _generate_hf(self, message: str, **kwargs) -> str:
-        """Generate via HuggingFace pipeline in a thread pool."""
+    async def _generate_hf(self, messages: List[Dict[str, str]], **kwargs) -> str:
+        """Generate via HuggingFace pipeline in a thread pool.
+
+        The full chat messages (system prompt + RAG context + user turn) are
+        passed so the model's chat template formats them; passing a bare
+        string would silently drop system prompt and context.
+        """
         loop = asyncio.get_event_loop()
         max_tokens = min(kwargs.get("max_tokens", self.config.max_tokens), 512)
         def _run():
             out = self._hf_pipe(
-                message,
+                messages,
                 max_new_tokens=max_tokens,
                 temperature=min(kwargs.get("temperature", self.config.temperature), 1.0),
                 top_p=kwargs.get("top_p", self.config.top_p),
                 do_sample=True,
                 return_full_text=False,
             )
-            return out[0]["generated_text"]
+            text = out[0]["generated_text"]
+            if isinstance(text, list):  # chat output can be message dicts
+                text = text[-1].get("content", "") if isinstance(text[-1], dict) else str(text[-1])
+            return text
         text = await loop.run_in_executor(None, _run)
         return text.strip()
 
@@ -412,7 +423,7 @@ class LLMEngine:
             if self.backend_name == "ollama":
                 return await self._generate_ollama(messages, **kwargs)
             if self.backend_name == "huggingface":
-                return await self._generate_hf(message, **kwargs)
+                return await self._generate_hf(messages, **kwargs)
             generation_params = self._build_generation_params(messages, stream=False, **kwargs)
 
             # Run generation in thread pool to avoid blocking
@@ -449,10 +460,10 @@ class LLMEngine:
             if self.backend_name in ("ollama", "huggingface"):
                 # Chunk the full response for a uniform streaming API
                 text = await self.generate(message, context=context, system_prompt=system_prompt, **kwargs)
-                for token in text.split():
+                for token in re.findall(r"\S+\s*", text):
                     if stop_event and stop_event.is_set():
                         break
-                    yield f"{token} "
+                    yield token
                     await asyncio.sleep(0)
                 return
             generation_params = self._build_generation_params(messages, stream=True, **kwargs)

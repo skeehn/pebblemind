@@ -65,6 +65,32 @@ class TestRAGSystem:
                 await rag.initialize()
 
     @pytest.mark.asyncio
+    async def test_ollama_dim_mismatch_updates_config(self, rag_config):
+        """Regression: Ollama dim adopted before documents_vec is created"""
+        import numpy as np
+        rag_config.embedding_backend = "ollama"
+        rag_config.embedding_dim = 384
+        fake_emb = MagicMock()
+        fake_emb.model = "nomic-embed-text"
+        fake_emb.encode.return_value = np.random.rand(1, 768).astype(np.float32)
+        with patch('pebblemind.rag.system.SentenceTransformer', None), \
+             patch('pebblemind.core.backends.ollama_has_model', return_value=True), \
+             patch('pebblemind.rag.embeddings.OllamaEmbedding', return_value=fake_emb):
+            rag = RAGSystem(rag_config)
+            await rag.initialize()
+            assert rag_config.embedding_dim == 768
+
+    async def test_auto_skips_ollama_when_model_absent(self, rag_config):
+        """Auto mode falls back to hash when the embed model isn't pulled"""
+        rag_config.embedding_backend = "auto"
+        with patch('pebblemind.rag.system.SentenceTransformer', None), \
+             patch('pebblemind.core.backends.ollama_has_model', return_value=False):
+            rag = RAGSystem(rag_config)
+            await rag.initialize()
+            from pebblemind.rag.embeddings import HashEmbedding
+            assert isinstance(rag.embedding_model, HashEmbedding)
+
+    @pytest.mark.asyncio
     async def test_initialize_hash_fallback(self, rag_config):
         """Test zero-dep hash fallback initializes with no heavy deps"""
         rag_config.embedding_backend = "hash"

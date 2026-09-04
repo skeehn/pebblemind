@@ -15,7 +15,7 @@ from rich.live import Live
 from rich.spinner import Spinner
 
 from .core import PebbleMind, quick_start
-from .config import Config, load_config
+from .config import Config, load_config, set_config
 from .models import ModelManager
 
 console = Console()
@@ -32,23 +32,30 @@ def cli(ctx: click.Context, config: Optional[str], verbose: bool):
     """
     ctx.ensure_object(dict)
 
-    # Load configuration: explicit → env → ./pebblemind.yaml → ~/.pebblemind/config.yaml
+    # Load configuration: an explicit --config path always wins (even when the
+    # file does not exist yet); otherwise env → ./pebblemind.yaml → ~/.pebblemind.
     import os as _os
-    _resolved = config or _os.environ.get("PEBBLEMIND_CONFIG")
-    if _resolved and Path(_resolved).exists():
-        ctx.obj["config"] = Config.from_file(_resolved)
-        ctx.obj["config_path"] = _resolved
-    elif Path("./pebblemind.yaml").exists():
-        ctx.obj["config"] = Config.from_file("./pebblemind.yaml")
-        ctx.obj["config_path"] = "./pebblemind.yaml"
-    elif (Path.home() / ".pebblemind" / "config.yaml").exists():
-        _hp = str(Path.home() / ".pebblemind" / "config.yaml")
-        ctx.obj["config"] = Config.from_file(_hp)
-        ctx.obj["config_path"] = _hp
+    if config:
+        if Path(config).exists():
+            ctx.obj["config"] = Config.from_file(config)
+        else:
+            ctx.obj["config"] = Config()
+        ctx.obj["config_path"] = config
     else:
-        ctx.obj["config"] = Config()
-        ctx.obj["config_path"] = config or "./pebblemind.yaml"
-
+        _resolved = _os.environ.get("PEBBLEMIND_CONFIG")
+        if _resolved and Path(_resolved).exists():
+            ctx.obj["config"] = Config.from_file(_resolved)
+            ctx.obj["config_path"] = _resolved
+        elif Path("./pebblemind.yaml").exists():
+            ctx.obj["config"] = Config.from_file("./pebblemind.yaml")
+            ctx.obj["config_path"] = "./pebblemind.yaml"
+        elif (Path.home() / ".pebblemind" / "config.yaml").exists():
+            _hp = str(Path.home() / ".pebblemind" / "config.yaml")
+            ctx.obj["config"] = Config.from_file(_hp)
+            ctx.obj["config_path"] = _hp
+        else:
+            ctx.obj["config"] = Config()
+            ctx.obj["config_path"] = "./pebblemind.yaml"
     # Set logging level
     if verbose:
         import logging
@@ -642,6 +649,9 @@ def chat(ctx: click.Context, model: Optional[str], model_size: Optional[str], ba
         config.llm.hf_model_id = hf_model
         if backend is None:
             config.llm.backend = "huggingface"
+    # Publish overrides globally: quick_start() reads the global config,
+    # otherwise --backend/--ollama-model/--hf-model would be silently ignored.
+    set_config(config)
 
     try:
         pebblemind = quick_start()

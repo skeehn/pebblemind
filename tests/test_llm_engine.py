@@ -105,8 +105,10 @@ class TestLLMEngine:
         """Test initialization fails gracefully without any backend"""
         engine = LLMEngine(llm_config)
 
-        with pytest.raises(ImportError, match="No LLM backend available|llama-cpp-python"):
-            await engine.initialize()
+        with patch('pebblemind.core.llm.ollama_is_available', return_value=False), \
+             patch.object(LLMEngine, '_hf_available', return_value=False):
+            with pytest.raises(ImportError, match=r"No LLM backend available|llama-cpp-python"):
+                await engine.initialize()
 
     @pytest.mark.asyncio
     async def test_initialize_ollama_backend(self, llm_config):

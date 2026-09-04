@@ -952,44 +952,58 @@ class TestPebbleMindQueryIntegration:
             "pebblemind.software_30": make_module("pebblemind.software_30", SelfImprovementManager=object),
         }
 
-        with patch.dict(sys.modules, stub_modules):
-            sys.modules.pop("pebblemind.pebblemind_app", None)
-            PebbleMind = import_module("pebblemind.pebblemind_app").PebbleMind
-
-            mind = PebbleMind.__new__(PebbleMind)
-            mind._initialized = True
-            mind.config = Mock()
-            mind.config.rag.max_results = 2
-            mind.config.llm.model_size = "1.5b"
-            mind.config.llm.threads = 4
-            mind.rag_system = Mock()
-            mind.rag_system.search = AsyncMock(
-                return_value=[{"content": "RAG context result"}]
+        # Snapshot import state: popping + reimporting below rebinds the parent
+        # package attribute, which would otherwise leak a stale module object and
+        # misdirect later patch("pebblemind.pebblemind_app....") targets.
+        import pebblemind as _pkg
+        _real_app_module = sys.modules.get("pebblemind.pebblemind_app")
+        _real_app_attr = getattr(_pkg, "pebblemind_app", None)
+        try:
+            with patch.dict(sys.modules, stub_modules):
+                sys.modules.pop("pebblemind.pebblemind_app", None)
+                PebbleMind = import_module("pebblemind.pebblemind_app").PebbleMind
+    
+                mind = PebbleMind.__new__(PebbleMind)
+                mind._initialized = True
+                mind.config = Mock()
+                mind.config.rag.max_results = 2
+                mind.config.llm.model_size = "1.5b"
+                mind.config.llm.threads = 4
+                mind.rag_system = Mock()
+                mind.rag_system.search = AsyncMock(
+                    return_value=[{"content": "RAG context result"}]
+                )
+                mind.memory_manager = Mock()
+                mind.memory_manager.retrieve_relevant_context = AsyncMock(return_value=[])
+                mind.llm_engine = Mock()
+                mind.llm_engine.generate = AsyncMock(return_value="LLM response")
+                mind.tool_manager = Mock()
+                mind.performance_monitor = Mock()
+                mind.performance_monitor.capture_metrics = AsyncMock()
+    
+                response = await mind.query(
+                    "What is Python?",
+                    enhance_reasoning=False,
+                    use_memory=False,
+                    use_tools=False,
+                    learn_from_interaction=False,
+                )
+    
+            assert response == "LLM response"
+            mind.rag_system.search.assert_awaited_once_with("What is Python?", k=2)
+            mind.llm_engine.generate.assert_awaited_once_with(
+                message="What is Python?",
+                context=["RAG context result"],
             )
-            mind.memory_manager = Mock()
-            mind.memory_manager.retrieve_relevant_context = AsyncMock(return_value=[])
-            mind.llm_engine = Mock()
-            mind.llm_engine.generate = AsyncMock(return_value="LLM response")
-            mind.tool_manager = Mock()
-            mind.performance_monitor = Mock()
-            mind.performance_monitor.capture_metrics = AsyncMock()
-
-            response = await mind.query(
-                "What is Python?",
-                enhance_reasoning=False,
-                use_memory=False,
-                use_tools=False,
-                learn_from_interaction=False,
-            )
-
-        assert response == "LLM response"
-        mind.rag_system.search.assert_awaited_once_with("What is Python?", k=2)
-        mind.llm_engine.generate.assert_awaited_once_with(
-            message="What is Python?",
-            context=["RAG context result"],
-        )
-
-        print("✓ Query uses RAG without explicit context")
+    
+            print("✓ Query uses RAG without explicit context")
+        finally:
+            if _real_app_module is not None:
+                sys.modules["pebblemind.pebblemind_app"] = _real_app_module
+            else:
+                sys.modules.pop("pebblemind.pebblemind_app", None)
+            if _real_app_attr is not None:
+                setattr(_pkg, "pebblemind_app", _real_app_attr)
 
     @pytest.mark.asyncio
     async def test_initialize_disables_optional_components_when_optional_imports_fail(self, tmp_path):

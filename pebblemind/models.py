@@ -387,22 +387,37 @@ class ModelManager:
         return True
 
     def get_model_info(self, model_id: str) -> Optional[Dict]:
-        """Get detailed info about a model"""
+        """Get detailed info about a model (GGUF file or pulled Ollama tag)."""
         if model_id in self.catalog:
             info = self.catalog[model_id].copy()
 
-            # Check if installed
+            # Check if installed (local GGUF or pulled Ollama tag)
             model_path = self.models_dir / info["filename"]
-            info["installed"] = model_path.exists()
-
-            if info["installed"]:
+            if model_path.exists():
+                info["installed"] = True
+                info["backend"] = "llamacpp"
                 info["path"] = str(model_path)
                 size_bytes = model_path.stat().st_size
                 info["actual_size_gb"] = size_bytes / (1024 ** 3)
+            elif info.get("ollama") and self._ollama_present(info["ollama"]):
+                info["installed"] = True
+                info["backend"] = "ollama"
+                info["path"] = f"ollama:{info['ollama']}"
+            else:
+                info["installed"] = False
 
             return info
 
         return None
+
+    @staticmethod
+    def _ollama_present(tag: str) -> bool:
+        """Best-effort check whether an Ollama tag is pulled (never raises)."""
+        try:
+            from .core.backends import ollama_has_model
+            return bool(ollama_has_model(tag, timeout=1.5))
+        except Exception:
+            return False
 
     def recommend(self, available_ram_gb: float = 8.0, use_case: str = "") -> str:
         """Recommend a model based on system resources and use case"""
