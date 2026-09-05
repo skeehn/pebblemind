@@ -81,8 +81,10 @@ class ReasoningEnhancer:
         
         # Add chain of thought if requested
         if use_chain_of_thought:
+            import re as _re
             chain_template = self.reasoning_chain_templates["complex"]
-            chain_text = "Please think through this step by step:\n" + "\n".join([f"{i+1}. {step}" for i, step in enumerate(chain_template)])
+            steps = [_re.sub(r"^\d+\.\s*", "", step) for step in chain_template]
+            chain_text = "Please think through this step by step:\n" + "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps)])
             enhanced_parts.append(chain_text)
         
         # Add original prompt

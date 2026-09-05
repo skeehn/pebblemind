@@ -358,7 +358,7 @@ class EnhancedMemoryManager:
     async def store_factual_memory(self, 
                                  fact: str, 
                                  importance: float = 0.8,
-                                 tags: List[str] = None) -> bool:
+                                 tags: Optional[List[str]] = None) -> bool:
         """Store a fact in semantic memory"""
         if tags is None:
             tags = ["fact"]
@@ -376,11 +376,18 @@ class EnhancedMemoryManager:
         
         return await self.long_term_memory.store_memory(fact_entry)
     
-    async def retrieve_relevant_context(self, 
-                                     query: str, 
+    async def retrieve_relevant_context(self,
+                                     query: str,
                                      max_memories: int = 5,
-                                     include_types: List[str] = None) -> List[str]:
-        """Retrieve relevant memories to provide as context for LLM"""
+                                     include_types: Optional[List[str]] = None,
+                                     max_chars: int = 2000,
+                                     per_memory_chars: int = 500) -> List[str]:
+        """Retrieve relevant memories to provide as context for LLM.
+
+        Context is strictly bounded (small models have tiny context windows):
+        each memory is truncated to per_memory_chars and the total is capped
+        at max_chars so one bad session can never poison future sessions.
+        """
         if include_types is None:
             include_types = ["episodic", "semantic", "factual"]
         
@@ -401,8 +408,16 @@ class EnhancedMemoryManager:
         for mem in filtered_memories:
             await self.long_term_memory.update_memory_access(mem.id)
         
-        # Return content as context strings
-        return [mem.content for mem in filtered_memories]
+        # Return bounded content as context strings
+        out: List[str] = []
+        used = 0
+        for mem in filtered_memories:
+            chunk = mem.content[:per_memory_chars]
+            if used + len(chunk) > max_chars:
+                break
+            out.append(chunk)
+            used += len(chunk)
+        return out
     
     async def get_memory_summary(self) -> str:
         """Get a human-readable summary of the memory system"""

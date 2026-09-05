@@ -84,7 +84,72 @@ class RAGSystem:
             raise
 
     async def _setup_embedding_model(self) -> None:
-        """Setup BGE-small embedding model"""
+        """Setup embedding model: sentence-transformers > ollama > zero-dep hash."""
+        from .embeddings import HashEmbedding, OllamaEmbedding
+
+        requested = (getattr(self.config, "embedding_backend", "auto") or "auto").lower()
+        if requested == "hash":
+            self.embedding_model = HashEmbedding(dim=self.config.embedding_dim)
+            logger.info("RAG using HashEmbedding fallback (dim=%d)", self.config.embedding_dim)
+            return
+        if requested == "ollama":
+            await self._setup_ollama_embeddings(explicit=True)
+            return
+        if requested == "sentence-transformers":
+            if SentenceTransformer is None:
+                raise ImportError("sentence-transformers not installed. Install with: pip install sentence-transformers")
+            self._load_st_model()
+            return
+        # auto: ST if importable, else Ollama if reachable, else hash
+        if SentenceTransformer is not None:
+            try:
+                self._load_st_model()
+                return
+            except Exception as e:
+                logger.warning("sentence-transformers load failed (%s), trying next backend", e)
+        if await self._setup_ollama_embeddings(explicit=False):
+            return
+        self.embedding_model = HashEmbedding(dim=self.config.embedding_dim)
+        logger.info("RAG using HashEmbedding fallback (dim=%d)", self.config.embedding_dim)
+
+    async def _setup_ollama_embeddings(self, explicit: bool) -> bool:
+        """Select Ollama embeddings only after verifying model + dimension.
+
+        Probes the configured ollama_embed_model and adopts its real vector
+        dimension into config BEFORE _setup_database creates documents_vec,
+        so the table schema always matches the vectors being stored.
+        Returns True when Ollama embeddings are ready.
+        """
+        from .embeddings import OllamaEmbedding
+        from ..core.backends import ollama_has_model
+
+        model = getattr(self.config, "ollama_embed_model", "nomic-embed-text")
+        host = getattr(self.config, "ollama_host", "http://localhost:11434")
+        if not ollama_has_model(model, host=host, timeout=3.0):
+            msg = f"Ollama embedding model '{model}' not available at {host} (run: ollama pull {model})"
+            if explicit:
+                raise RuntimeError(msg)
+            logger.info("%s; using HashEmbedding fallback", msg)
+            return False
+        emb = OllamaEmbedding(model=model, host=host)
+        try:
+            probe = await asyncio.to_thread(emb.encode, ["dimension probe"])
+            actual_dim = int(probe.shape[1])
+        except Exception as e:
+            msg = f"Ollama embedding probe failed for '{model}': {e}"
+            if explicit:
+                raise RuntimeError(msg)
+            logger.warning("%s; using HashEmbedding fallback", msg)
+            return False
+        if actual_dim != self.config.embedding_dim:
+            logger.info("Ollama embedding dim %d (was %d)", actual_dim, self.config.embedding_dim)
+            self.config.embedding_dim = actual_dim
+        self.embedding_model = emb
+        logger.info("RAG using Ollama embeddings (%s, dim=%d)", model, actual_dim)
+        return True
+
+    def _load_st_model(self) -> None:
+        """Load sentence-transformers model (raises if unavailable)."""
         if SentenceTransformer is None:
             raise ImportError("sentence-transformers not installed. Install with: pip install sentence-transformers")
 
@@ -250,7 +315,7 @@ class RAGSystem:
 
                     for chunk in chunks:
                         # Generate embedding
-                        embedding = self.embedding_model.encode([chunk])[0]
+                        embedding = (await asyncio.to_thread(self.embedding_model.encode, [chunk]))[0]
 
                         # Generate document ID
                         doc_id = self._generate_document_id(chunk)
@@ -289,7 +354,7 @@ class RAGSystem:
 
         try:
             # Generate query embedding
-            query_embedding = self.embedding_model.encode([query])[0]
+            query_embedding = (await asyncio.to_thread(self.embedding_model.encode, [query]))[0]
 
             results = []
 

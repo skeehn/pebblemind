@@ -15,14 +15,14 @@ from rich.live import Live
 from rich.spinner import Spinner
 
 from .core import PebbleMind, quick_start
-from .config import Config, load_config
+from .config import Config, load_config, set_config
 from .models import ModelManager
 
 console = Console()
 
 
 @click.group()
-@click.option("--config", "-c", type=click.Path(exists=True), help="Path to config file")
+@click.option("--config", "-c", type=click.Path(exists=False), help="Path to config file")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 def cli(ctx: click.Context, config: Optional[str], verbose: bool):
@@ -32,12 +32,30 @@ def cli(ctx: click.Context, config: Optional[str], verbose: bool):
     """
     ctx.ensure_object(dict)
 
-    # Load configuration
+    # Load configuration: an explicit --config path always wins (even when the
+    # file does not exist yet); otherwise env → ./pebblemind.yaml → ~/.pebblemind.
+    import os as _os
     if config:
-        ctx.obj["config"] = Config.from_file(config)
+        if Path(config).exists():
+            ctx.obj["config"] = Config.from_file(config)
+        else:
+            ctx.obj["config"] = Config()
+        ctx.obj["config_path"] = config
     else:
-        ctx.obj["config"] = Config()
-
+        _resolved = _os.environ.get("PEBBLEMIND_CONFIG")
+        if _resolved and Path(_resolved).exists():
+            ctx.obj["config"] = Config.from_file(_resolved)
+            ctx.obj["config_path"] = _resolved
+        elif Path("./pebblemind.yaml").exists():
+            ctx.obj["config"] = Config.from_file("./pebblemind.yaml")
+            ctx.obj["config_path"] = "./pebblemind.yaml"
+        elif (Path.home() / ".pebblemind" / "config.yaml").exists():
+            _hp = str(Path.home() / ".pebblemind" / "config.yaml")
+            ctx.obj["config"] = Config.from_file(_hp)
+            ctx.obj["config_path"] = _hp
+        else:
+            ctx.obj["config"] = Config()
+            ctx.obj["config_path"] = "./pebblemind.yaml"
     # Set logging level
     if verbose:
         import logging
@@ -71,11 +89,23 @@ def models_list(ctx: click.Context, catalog: bool):
         table.add_column("Size", justify="right")
         table.add_column("Speed")
         table.add_column("Quality")
+        table.add_column("Ollama")
         table.add_column("Status")
         
+        try:
+            from .core.backends import ollama_has_model as _ohm
+            _ollama_ok = True
+        except Exception:
+            _ohm = None
+            _ollama_ok = False
         for model_id, info in manager.list_catalog().items():
             model_path = models_dir / info["filename"]
-            status = "✅ Installed" if model_path.exists() else "⬇️  Available"
+            if model_path.exists():
+                status = "✅ GGUF"
+            elif _ollama_ok and _ohm(info.get("ollama", ""), timeout=1.0):
+                status = "✅ Ollama"
+            else:
+                status = "⬇️  Available"
             
             table.add_row(
                 model_id,
@@ -83,11 +113,12 @@ def models_list(ctx: click.Context, catalog: bool):
                 f"{info['size_gb']:.1f}GB",
                 info["speed"],
                 info["quality"],
+                info.get("ollama", "-"),
                 status
             )
         
         console.print(table)
-        console.print(f"\n[dim]Install with: pebblemind models install <id>[/dim]\n")
+        console.print(f"\n[dim]GGUF: pebblemind models install <id>  |  Ollama: pebblemind models pull <id>[/dim]\n")
         
     else:
         # Show installed models
@@ -170,6 +201,22 @@ def models_install(ctx: click.Context, model_id: str):
             console.print(f"\n[red]❌ Download failed: {e}[/red]")
 
 
+@models.command("pull")
+@click.argument("model_id")
+@click.option("--host", default="http://localhost:11434", help="Ollama server URL")
+def models_pull(model_id: str, host: str):
+    """Pull a model via Ollama (best Mac path: brew install ollama)"""
+    from pathlib import Path as _P
+    manager = ModelManager(_P("./data/models"))
+    try:
+        tag = manager.pull_ollama(model_id, host=host)
+        console.print(f"[green]✅ Ollama model ready: {tag}[/green]")
+        console.print(f"Use it: [cyan]pebblemind chat --backend ollama --ollama-model {tag} 'Hello!'[/cyan]")
+    except Exception as e:
+        console.print(f"[red]❌ Ollama pull failed: {e}[/red]")
+        console.print("Is Ollama running? Start it with: [cyan]ollama serve[/cyan]")
+
+
 @models.command("info")
 @click.argument("model_id")
 @click.pass_context
@@ -212,15 +259,23 @@ def models_info(ctx: click.Context, model_id: str):
 @click.pass_context
 def models_recommend(ctx: click.Context):
     """Get a model recommendation based on your system"""
-    import psutil
-    
     config = ctx.obj["config"]
     models_dir = Path(config.data_path) / "models"
     manager = ModelManager(models_dir)
-    
-    # Get system info
-    ram_gb = psutil.virtual_memory().total / (1024 ** 3)
-    available_ram_gb = psutil.virtual_memory().available / (1024 ** 3)
+
+    # System RAM (psutil optional — stdlib fallback)
+    try:
+        import psutil
+        _vm = psutil.virtual_memory()
+        ram_gb = _vm.total / (1024 ** 3)
+        available_ram_gb = _vm.available / (1024 ** 3)
+    except ImportError:
+        import os as _os
+        try:
+            ram_gb = (_os.sysconf("SC_PHYS_PAGES") * _os.sysconf("SC_PAGE_SIZE")) / (1024 ** 3)
+        except (ValueError, OSError):
+            ram_gb = 8.0
+        available_ram_gb = ram_gb * 0.75
     
     console.print("\n[bold blue]💡 Model Recommendation[/bold blue]")
     console.print("=" * 50)
@@ -291,29 +346,29 @@ def config_show(ctx: click.Context):
     console.print("=" * 50)
     
     console.print("\n[bold]LLM Settings:[/bold]")
-    console.print(f"  Model Path: {config.llm.model_path or '[dim]Not set[/dim]'}")
+    console.print(f"  Backend: {config.llm.backend}")
+    console.print(f"  Model Path: {config.llm.model_path or '[dim]Not set (auto)[/dim]'}")
+    console.print(f"  Ollama: {config.llm.ollama_model} @ {config.llm.ollama_host}")
+    console.print(f"  HF Model: {config.llm.hf_model_id}")
     console.print(f"  Model Size: {config.llm.model_size}")
     console.print(f"  Context Length: {config.llm.context_length}")
     console.print(f"  Temperature: {config.llm.temperature}")
     console.print(f"  Max Tokens: {config.llm.max_tokens}")
     console.print(f"  GPU Layers: {config.llm.gpu_layers}")
     
-    console.print("\n[bold]Cache Settings:[/bold]")
-    console.print(f"  Enabled: {'✅' if config.cache.enabled else '❌'}")
-    console.print(f"  Max Size: {config.cache.max_size}")
-    console.print(f"  TTL: {config.cache.ttl}s")
     
     console.print("\n[bold]RAG Settings:[/bold]")
-    console.print(f"  Enabled: {'✅' if config.rag.enabled else '❌'}")
     console.print(f"  Embedding Model: {config.rag.embedding_model}")
     console.print(f"  Chunk Size: {config.rag.chunk_size}")
     console.print(f"  Chunk Overlap: {config.rag.chunk_overlap}")
-    console.print(f"  Top K Results: {config.rag.top_k}")
+    console.print(f"  Embedding Backend: {config.rag.embedding_backend}")
+    console.print(f"  Ollama Embed: {config.rag.ollama_embed_model} @ {config.rag.ollama_host}")
+    console.print(f"  Max Results: {config.rag.max_results}")
     
     console.print("\n[bold]Paths:[/bold]")
     console.print(f"  Data: {config.data_path}")
     console.print(f"  Cache: {config.cache_path}")
-    console.print(f"  Config: {config.config_path}\n")
+    console.print(f"  Config: {ctx.obj.get('config_path', './pebblemind.yaml')}\n")
 
 
 @config_cmd.command("set")
@@ -357,9 +412,10 @@ def config_set(ctx: click.Context, key: str, value: str):
         setattr(section_obj, setting, value)
         
         # Save configuration
-        config.save()
+        _save_path = ctx.obj.get("config_path", "./pebblemind.yaml")
+        config.to_file(_save_path)
         
-        console.print(f"[green]✓ Set {key} = {value}[/green]")
+        console.print(f"[green]✓ Set {key} = {value} (saved to {_save_path})[/green]")
         
     except Exception as e:
         console.print(f"[red]Error setting config: {e}[/red]")
@@ -390,47 +446,76 @@ def doctor(ctx: click.Context):
         console.print(f"  ❌ Version {py_version.major}.{py_version.minor}.{py_version.micro} (need 3.10-3.12)")
         issues.append("Python version not in recommended range (3.10-3.12)")
     
-    # Check dependencies
-    console.print(f"\n[bold]Dependencies:[/bold]")
-    deps_ok = True
-    
+    # Check backends (any ONE working backend = healthy)
+    console.print(f"\n[bold]Backends:[/bold]")
+    from .core.backends import ollama_is_available, ollama_has_model
+    _ollama = ollama_is_available(config.llm.ollama_host)
+    if _ollama:
+        console.print(f"  \u2705 Ollama at {config.llm.ollama_host} (recommended on Mac)")
+        if ollama_has_model(config.llm.ollama_model, host=config.llm.ollama_host):
+            console.print(f"     \u2705 Model pulled: {config.llm.ollama_model}")
+        else:
+            console.print(f"     \u2b07\ufe0f  Model not pulled yet: ollama pull {config.llm.ollama_model}")
+            warnings.append(f"Ollama model not pulled: {config.llm.ollama_model}")
+    else:
+        console.print("  \u2b07\ufe0f  Ollama not running (brew install ollama \u0026\u0026 ollama serve)")
+
     try:
         import llama_cpp
-        console.print(f"  ✅ llama-cpp-python installed")
+        console.print("  \u2705 llama-cpp-python installed (GGUF)")
     except ImportError:
-        console.print(f"  ❌ llama-cpp-python not found")
-        issues.append("llama-cpp-python not installed")
-        deps_ok = False
-    
+        console.print("  \u2b07\ufe0f  llama-cpp-python missing", markup=False)
+        console.print("     pip install pebblemind[llm]", markup=False)
+
+    try:
+        import transformers
+        import torch
+        console.print("  \u2705 transformers+torch installed (HuggingFace)")
+    except ImportError:
+        console.print("  \u2b07\ufe0f  transformers missing", markup=False)
+        console.print("     pip install pebblemind[hf]", markup=False)
+
     try:
         import numpy
-        console.print(f"  ✅ numpy installed")
+        console.print("  \u2705 numpy installed")
     except ImportError:
-        console.print(f"  ⚠️  numpy not found")
-        warnings.append("numpy recommended for better performance")
-    
+        console.print("  \u274c numpy not found (required)")
+        issues.append("numpy is required: pip install numpy")
+
     try:
-        import scipy
-        console.print(f"  ✅ scipy installed")
+        import sentence_transformers
+        console.print("  \u2705 sentence-transformers (RAG embeddings)")
     except ImportError:
-        console.print(f"  ⚠️  scipy not found")
-        warnings.append("scipy recommended for RAG")
-    
-    # Check model
+        console.print("  \u2139\ufe0f  sentence-transformers missing \u2014 RAG uses zero-dep fallback")
+
+    # Check model (GGUF file OR Ollama model counts)
     console.print(f"\n[bold]Model:[/bold]")
+    _have_model = False
     if config.llm.model_path:
         model_path = Path(config.llm.model_path).expanduser()
         if model_path.exists():
             size_gb = model_path.stat().st_size / (1024**3)
-            console.print(f"  ✅ Model found: {model_path}")
-            console.print(f"     Size: {size_gb:.2f} GB")
+            console.print(f"  \u2705 GGUF found: {model_path} ({size_gb:.2f} GB)")
+            _have_model = True
         else:
-            console.print(f"  ❌ Model not found: {model_path}")
-            issues.append(f"Model file missing: {model_path}")
-    else:
-        console.print(f"  ⚠️  No model configured")
-        warnings.append("No model path set in configuration")
-    
+            console.print(f"  \u26a0\ufe0f  GGUF path set but missing: {model_path}")
+    if _ollama and ollama_has_model(config.llm.ollama_model, host=config.llm.ollama_host):
+        console.print(f"  \u2705 Ollama model ready: {config.llm.ollama_model}")
+        _have_model = True
+    if not _have_model:
+        if not _ollama:
+            try:
+                import llama_cpp  # noqa
+                _has_local = True
+            except ImportError:
+                _has_local = False
+            if not _has_local:
+                issues.append("No LLM backend available \u2014 easiest: brew install ollama \u0026\u0026 ollama pull qwen2.5:1.5b")
+            else:
+                warnings.append("No model ready \u2014 pebblemind models install <id>")
+        else:
+            warnings.append("No model ready \u2014 ollama pull qwen2.5:1.5b or pebblemind models install <id>")
+        console.print(f"  \u2b07\ufe0f  No model ready (backend={config.llm.backend})")
     # Check paths
     console.print(f"\n[bold]Paths:[/bold]")
     data_path = Path(config.data_path).expanduser()
@@ -536,12 +621,16 @@ def status(ctx: click.Context):
 
 
 @cli.command()
-@click.option("--model", "-m", help="Path to LLM model file")
+@click.option("--model", "-m", help="Path to LLM GGUF model file")
 @click.option("--model-size", help="Model size: 1.5b, 3b, 7b")
+@click.option("--backend", type=click.Choice(["auto", "ollama", "llamacpp", "huggingface"]), default=None, help="LLM backend")
+@click.option("--ollama-model", default=None, help="Ollama model tag (e.g. qwen2.5:1.5b)")
+@click.option("--hf-model", default=None, help="HuggingFace model id")
 @click.option("--interactive", "-i", is_flag=True, help="Start interactive chat")
 @click.argument("message", required=False)
 @click.pass_context
-def chat(ctx: click.Context, model: Optional[str], model_size: Optional[str], interactive: bool, message: Optional[str]):
+def chat(ctx: click.Context, model: Optional[str], model_size: Optional[str], backend: Optional[str],
+         ollama_model: Optional[str], hf_model: Optional[str], interactive: bool, message: Optional[str]):
     """Chat with PebbleMind"""
     config = ctx.obj["config"]
 
@@ -549,10 +638,20 @@ def chat(ctx: click.Context, model: Optional[str], model_size: Optional[str], in
     if model:
         config.llm.model_path = model
     if model_size:
-        if model_size not in ["1.5b", "3b", "7b"]:
-            console.print(f"[red]Invalid model size: {model_size}. Use: 1.5b, 3b, 7b[/red]")
-            return
         config.llm.model_size = model_size
+    if backend:
+        config.llm.backend = backend
+    if ollama_model:
+        config.llm.ollama_model = ollama_model
+        if backend is None:
+            config.llm.backend = "ollama"
+    if hf_model:
+        config.llm.hf_model_id = hf_model
+        if backend is None:
+            config.llm.backend = "huggingface"
+    # Publish overrides globally: quick_start() reads the global config,
+    # otherwise --backend/--ollama-model/--hf-model would be silently ignored.
+    set_config(config)
 
     try:
         pebblemind = quick_start()
@@ -738,6 +837,37 @@ def add_docs(ctx: click.Context, documents: tuple, recursive: bool):
 
 
 @cli.command()
+def backends():
+    """Show available LLM/RAG backends on this machine"""
+    console.print("\n[bold blue]🔌 Backends[/bold blue]")
+    from .core.backends import ollama_is_available
+    if ollama_is_available():
+        console.print("  ✅ Ollama (http://localhost:11434) — recommended on Mac")
+    else:
+        console.print("  ⬇️  Ollama not running — brew install ollama && ollama serve")
+    try:
+        import llama_cpp  # noqa
+        console.print("  ✅ llama-cpp-python (GGUF)")
+    except ImportError:
+        console.print("  ⬇️  llama-cpp-python missing — pip install pebblemind[llm]", markup=False)
+    try:
+        import transformers, torch  # noqa
+        console.print("  ✅ transformers+torch (HuggingFace)")
+    except ImportError:
+        console.print("  ⬇️  transformers missing — pip install pebblemind[hf]", markup=False)
+    try:
+        import sentence_transformers  # noqa
+        console.print("  ✅ sentence-transformers (RAG embeddings)")
+    except ImportError:
+        console.print("  ℹ️  sentence-transformers missing — RAG uses zero-dep hash fallback")
+    try:
+        import sqlite_vec  # noqa
+        console.print("  ✅ sqlite-vec (RAG vector search)")
+    except ImportError:
+        console.print("  ℹ️  sqlite-vec missing — RAG uses keyword fallback")
+
+
+@cli.command()
 @click.argument("model_size", type=click.Choice(["1.5b", "3b", "7b"]))
 @click.pass_context
 def switch_model(ctx: click.Context, model_size: str):
@@ -829,12 +959,19 @@ def serve(ctx: click.Context, host: str, port: int):
     """Start the API server"""
     config = ctx.obj["config"]
 
-    # Update API config
+    # Update API config and publish to global config so quick_start picks it up
     config.api.host = host
     config.api.port = port
+    from .config import set_config as _set_config
+    _set_config(config)
 
     try:
         pebblemind = quick_start()
+
+        if pebblemind.api_server is None:
+            console.print("[red]API server unavailable — install API deps:[/red]")
+            console.print("  pip install fastapi uvicorn python-multipart")
+            return
 
         async def start_server():
             await pebblemind.start()

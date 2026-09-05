@@ -9,9 +9,14 @@ from pydantic import BaseModel, Field
 
 class LLMConfig(BaseModel):
     """Configuration for LLM inference optimized for lightweight devices"""
+    backend: str = Field(default="auto", description="LLM backend: auto, ollama, llamacpp, huggingface, fallback")
     model_path: str = Field(default="", description="Path to the LLM model file (auto-detected if empty)")
     model_name: str = Field(default="Qwen2.5-1.5B-Instruct", description="Model name")
     model_size: str = Field(default="1.5b", description="Model size: 1.5b (ultra-light, MacBook Air optimized), 3b (balanced), 7b (high-quality)")
+    ollama_host: str = Field(default="http://localhost:11434", description="Ollama server URL")
+    ollama_model: str = Field(default="qwen2.5:1.5b", description="Ollama model tag to use")
+    hf_model_id: str = Field(default="Qwen/Qwen2.5-1.5B-Instruct", description="HuggingFace model id for hf backend")
+    hf_device: str = Field(default="auto", description="HF device: auto, cpu, mps, cuda")
     context_length: int = Field(default=2048, description="Maximum context length (optimized for lightweight devices)")
     max_tokens: int = Field(default=256, description="Maximum tokens to generate (conservative for efficiency)")
     temperature: float = Field(default=0.7, description="Sampling temperature")
@@ -39,7 +44,10 @@ class VoiceConfig(BaseModel):
 
 class RAGConfig(BaseModel):
     """Configuration for RAG system optimized for lightweight devices"""
+    embedding_backend: str = Field(default="auto", description="Embedding backend: auto, sentence-transformers, ollama, hash")
     embedding_model: str = Field(default="BAAI/bge-small-en-v1.5", description="Lightweight embedding model")
+    ollama_host: str = Field(default="http://localhost:11434", description="Ollama server URL for embeddings")
+    ollama_embed_model: str = Field(default="nomic-embed-text", description="Ollama embedding model")
     embedding_dim: int = Field(default=384, description="Embedding dimension")
     vector_db_path: str = Field(default="./data/vectors.db", description="Vector database path")
     chunk_size: int = Field(default=512, description="Document chunk size")

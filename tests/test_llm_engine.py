@@ -102,11 +102,27 @@ class TestLLMEngine:
     @pytest.mark.asyncio
     @patch('pebblemind.core.llm.Llama', None)
     async def test_initialize_without_llama_cpp(self, llm_config):
-        """Test initialization fails gracefully without llama-cpp-python"""
+        """Test initialization fails gracefully without any backend"""
         engine = LLMEngine(llm_config)
 
-        with pytest.raises(ImportError, match="llama-cpp-python not installed"):
+        with patch('pebblemind.core.llm.ollama_is_available', return_value=False), \
+             patch.object(LLMEngine, '_hf_available', return_value=False):
+            with pytest.raises(ImportError, match=r"No LLM backend available|llama-cpp-python"):
+                await engine.initialize()
+
+    @pytest.mark.asyncio
+    async def test_initialize_ollama_backend(self, llm_config):
+        """Test Ollama backend initializes when server answers"""
+        from unittest.mock import MagicMock
+        llm_config.backend = "ollama"
+        engine = LLMEngine(llm_config)
+        fake_resp = MagicMock()
+        fake_resp.json.return_value = {"models": [{"name": "qwen2.5:1.5b"}]}
+        fake_resp.raise_for_status.return_value = None
+        with patch('httpx.get', return_value=fake_resp):
             await engine.initialize()
+        assert engine.backend_name == "ollama"
+        assert engine._is_ready()
 
     @pytest.mark.asyncio
     async def test_generate_without_initialization(self, llm_config):
