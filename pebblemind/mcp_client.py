@@ -97,7 +97,7 @@ class MCPServerSession:
         self.proc.stdin.write((json.dumps(payload, separators=(",", ":")) + "\n").encode())
         await self.proc.stdin.drain()
 
-    async def _read_response(self, want_id: int, timeout: float) -> Optional[Dict[str, Any]]:
+    async def _read_response(self, want_id: int, timeout: float, on_progress=None) -> Optional[Dict[str, Any]]:
         assert self.proc and self.proc.stdout
         while True:
             line = await asyncio.wait_for(self.proc.stdout.readline(), timeout=timeout)
@@ -107,15 +107,18 @@ class MCPServerSession:
                 msg = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if on_progress and msg.get("method") == "notifications/progress":
+                await on_progress(msg.get("params") or {})
+                continue
             if msg.get("id") == want_id:
                 return msg
 
-    async def _request(self, method: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def _request(self, method: str, params: Dict[str, Any], on_progress=None) -> Optional[Dict[str, Any]]:
         self._next_id += 1
         rid = self._next_id
         await self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
         if self.config.command:  # stdio
-            resp = await self._read_response(rid, self.config.timeout)
+            resp = await self._read_response(rid, self.config.timeout, on_progress=on_progress)
         else:  # http
             resp = await self._http_request({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
         if resp is None:
@@ -145,10 +148,14 @@ class MCPServerSession:
     async def list_tools(self) -> List[Dict[str, Any]]:
         return self.tools
 
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
-        result = await self._request(
-            "tools/call", {"name": tool_name, "arguments": arguments}
-        )
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any], stream: bool = False, on_progress=None) -> str:
+        """Call a tool. With ``stream=True`` (stdio servers), a progress token is
+        attached and ``on_progress(params)`` fires for each progress notification.
+        """
+        params: Dict[str, Any] = {"name": tool_name, "arguments": arguments}
+        if stream:
+            params["_meta"] = {"progressToken": f"pt-{self._next_id + 1}"}
+        result = await self._request("tools/call", params, on_progress=on_progress)
         if result is None:
             raise RuntimeError(f"MCP server '{self.name}' returned no result")
         if result.get("isError"):

@@ -496,6 +496,110 @@ class TestRobustMCPAndWeb:
     def _py():
         return sys.executable
 
+    @needs_15b
+    def test_mcp_server_streams_chat(self, tmp_path):
+        """chat with _meta.progressToken must emit progress notifications whose
+        concatenation equals the final result text."""
+        cfg_file = tmp_path / "pm.yaml"
+        cfg_file.write_text(
+            "llm:\n"
+            f"  model_path: {MODELS_15B}\n"
+            "  model_size: 1.5b\n"
+            "  enable_gpu_offload: true\n"
+            "  gpu_layers: 99\n"
+            "rag:\n"
+            "  embedding_backend: hash\n"
+        )
+        proc = subprocess.Popen(
+            [PY, "-m", "pebblemind.mcp_server"],
+            cwd=REPO, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True,
+        )
+
+        def send(payload):
+            assert proc.stdin is not None
+            proc.stdin.write(json.dumps(payload) + "\n")
+            proc.stdin.flush()
+            assert proc.stdout is not None
+            return json.loads(proc.stdout.readline())
+
+        def send_and_collect(payload):
+            """Return (response, progress_list), interleaving notifications."""
+            assert proc.stdin is not None
+            proc.stdin.write(json.dumps(payload) + "\n")
+            proc.stdin.flush()
+            progress = []
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    raise AssertionError("MCP server closed stdout")
+                msg = json.loads(line)
+                if msg.get("method") == "notifications/progress":
+                    progress.append(msg["params"])
+                    continue
+                return msg, progress
+
+        try:
+            send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}
+            }})
+            proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+            proc.stdin.flush()
+            resp, progress = send_and_collect({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                "name": "chat",
+                "arguments": {"message": "Count from one to five slowly.", "use_rag": False},
+                "_meta": {"progressToken": "tok-1"},
+            }})
+            assert resp["result"]["isError"] is False, resp
+            final_text = resp["result"]["content"][0]["text"]
+            assert progress, "no progress notifications received for streamed chat"
+            assert all(p["progressToken"] == "tok-1" for p in progress)
+            streamed = "".join(p["message"] for p in progress)
+            assert streamed == final_text, (
+                f"stream concat mismatch:\nstream={streamed[:120]!r}\nfinal={final_text[:120]!r}"
+            )
+            assert len(progress) >= 3, f"too few streaming chunks: {len(progress)}"
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except Exception:
+                proc.kill()
+
+    def test_cli_ask_docs_round_trip(self, tmp_path):
+        """add-docs then ask-docs must retrieve the added fact end-to-end."""
+        doc = tmp_path / "fact.txt"
+        doc.write_text(
+            "The PebbleMind field handbook states that the maintenance window "
+            "for the pebble array is every second Tuesday at 14:00 UTC."
+        )
+        cfg_file = tmp_path / "pm.yaml"
+        cfg_file.write_text(
+            "llm:\n"
+            f"  model_path: {MODELS_15B}\n"
+            "  model_size: 1.5b\n"
+            "  enable_gpu_offload: true\n"
+            "  gpu_layers: 99\n"
+            "rag:\n"
+            "  embedding_backend: hash\n"
+            f"  vector_db_path: {tmp_path / 'vectors.db'}\n"
+        )
+
+        r = subprocess.run(
+            [PY, "-m", "pebblemind", "--config", str(cfg_file), "add-docs", str(doc)],
+            capture_output=True, text=True, timeout=180, cwd=REPO,
+        )
+        assert r.returncode == 0, (r.stdout + r.stderr)[-2000:]
+
+        r = subprocess.run(
+            [PY, "-m", "pebblemind", "--config", str(cfg_file),
+             "ask-docs", "When is the maintenance window for the pebble array?", "--no-answer"],
+            capture_output=True, text=True, timeout=180, cwd=REPO,
+        )
+        assert r.returncode == 0, (r.stdout + r.stderr)[-2000:]
+        combined = r.stdout + r.stderr
+        assert "second Tuesday" in combined and "14:00 UTC" in combined, combined[-1500:]
+
     @needs_net
     def test_web_access_tools(self):
         from pebblemind.web_tools import web_fetch, web_search, is_valid_url

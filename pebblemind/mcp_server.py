@@ -29,7 +29,9 @@ def _tool_chat() -> Dict[str, Any]:
         "name": "chat",
         "description": (
             "Ask PebbleMind, a fully local AI assistant (no cloud). Send a "
-            "message and receive a concise answer generated on-device."
+            "message and receive a concise answer generated on-device. "
+            "Streaming: attach _meta.progressToken to receive token-by-token "
+            "notifications/progress while the answer generates."
         ),
         "inputSchema": {
             "type": "object",
@@ -121,8 +123,16 @@ class MCPServer:
         return self.app
 
     # ----------------------------------------------------------- dispatch
-    async def handle(self, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Handle one JSON-RPC request; returns response or None (notification)."""
+    async def handle(
+        self,
+        msg: Dict[str, Any],
+        notify: Optional[Any] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Handle one JSON-RPC request; returns response or None (notification).
+
+        ``notify`` is an async callback used to emit server notifications
+        (e.g. streaming progress) while a request is in flight.
+        """
         method = msg.get("method", "")
         msg_id = msg.get("id")
         params = msg.get("params") or {}
@@ -154,7 +164,7 @@ class MCPServer:
                 },
             )
         if method == "tools/call":
-            return self._result(msg_id, await self._call_tool(params))
+            return self._result(msg_id, await self._call_tool(params, notify=notify))
         if method == "resources/list":
             return self._result(msg_id, {"resources": [_resource_status()]})
         if method == "resources/read":
@@ -176,16 +186,55 @@ class MCPServer:
             return self._error(msg_id, -32602, f"Unknown resource: {params.get('uri')}")
         return self._error(msg_id, -32601, f"Method not found: {method}")
 
-    async def _call_tool(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _call_tool(self, params: Dict[str, Any], notify: Optional[Any] = None) -> Dict[str, Any]:
         name = params.get("name", "")
         args = params.get("arguments") or {}
         try:
-            result = await self._run_tool(name, args)
+            meta = params.get("_meta") or {}
+            progress_token = meta.get("progressToken")
+            if name == "chat" and progress_token is not None and notify is not None:
+                result = await self._run_chat_streaming(args, progress_token, notify)
+            else:
+                result = await self._run_tool(name, args)
             text = result if isinstance(result, str) else json.dumps(result, indent=2, default=str)
             return {"content": [{"type": "text", "text": text}], "isError": False}
         except Exception as e:  # tool failures are reported, not fatal
             logger.exception("MCP tool %s failed", name)
             return {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
+
+    async def _run_chat_streaming(self, args: Dict[str, Any], progress_token: Any, notify: Any) -> str:
+        """Stream chat tokens as MCP progress notifications; returns full text."""
+        import time as _time
+
+        app = await self._ensure_app()
+        message_text = args.get("message", "")
+        use_rag = bool(args.get("use_rag", True))
+        enhanced, context = await app.prepare_generation_inputs(
+            message_text, use_rag=use_rag, use_memory=False,
+        )
+        if app.llm_engine is None:
+            raise RuntimeError("No LLM engine available")
+        start_time = _time.time()
+        parts: list = []
+        count = 0
+        async for token in app.llm_engine.generate_stream(enhanced, context=context):
+            parts.append(token)
+            count += 1
+            await notify({
+                "progressToken": progress_token,
+                "progress": count,
+                "message": token,
+            })
+        response = "".join(parts)
+        try:
+            await app.finalize_interaction(
+                message_text, response, use_memory=True,
+                learn_from_interaction=True, memory_importance=0.6,
+                start_time=start_time,
+            )
+        except Exception as e:
+            logger.debug("finalize_interaction failed: %s", e)
+        return response
 
     async def _run_tool(self, name: str, args: Dict[str, Any]):
         app = await self._ensure_app()
@@ -249,7 +298,20 @@ class MCPServer:
                 msg = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            resp = await self.handle(msg)
+
+            async def _notify(payload: Dict[str, Any]) -> None:
+                out = json.dumps(
+                    {"jsonrpc": "2.0", "method": "notifications/progress", "params": payload},
+                    separators=(",", ":"),
+                ) + "\n"
+                if writer is not None:
+                    writer.write(out.encode())
+                    await writer.drain()
+                else:
+                    sys.stdout.write(out)
+                    sys.stdout.flush()
+
+            resp = await self.handle(msg, notify=_notify)
             if resp is not None:
                 out = json.dumps(resp, separators=(",", ":")) + "\n"
                 if writer is not None:

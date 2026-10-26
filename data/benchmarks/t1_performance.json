@@ -1,42 +1,42 @@
 {
-  "when": "2026-10-26 19:16:53",
-  "rss_start_mb": 2427.015625,
+  "when": "2026-10-26 19:51:34",
+  "rss_start_mb": 4575.40625,
   "results": [
     {
       "label": "1.5B-cpu",
       "backend": "llamacpp",
-      "init_s": 2.748,
-      "ttft_s": 0.981,
+      "init_s": 0.53,
+      "ttft_s": 0.303,
       "tokens": 23,
-      "gen_s": 1.488,
-      "tokens_per_s": 15.46,
-      "rss_mb": 2427.0
+      "gen_s": 0.668,
+      "tokens_per_s": 34.45,
+      "rss_mb": 5672.5
     },
     {
       "label": "1.5B-metal-full",
       "backend": "llamacpp",
-      "init_s": 0.298,
-      "ttft_s": 0.175,
+      "init_s": 0.189,
+      "ttft_s": 0.12,
       "tokens": 14,
-      "gen_s": 0.397,
-      "tokens_per_s": 35.29,
-      "rss_mb": 2427.0
+      "gen_s": 0.334,
+      "tokens_per_s": 41.87,
+      "rss_mb": 5672.5
     },
     {
       "label": "7B-metal-full",
       "backend": "llamacpp",
-      "init_s": 14.701,
-      "ttft_s": 4.963,
+      "init_s": 4.879,
+      "ttft_s": 0.47,
       "tokens": 10,
-      "gen_s": 10.418,
-      "tokens_per_s": 0.96,
-      "rss_mb": 2427.0
+      "gen_s": 1.046,
+      "tokens_per_s": 9.56,
+      "rss_mb": 5676.1
     },
     {
       "label": "cache-check",
-      "cold_s": 0.344,
-      "warm_s": 0.18,
-      "speedup": 1.91
+      "cold_s": 0.301,
+      "warm_s": 0.175,
+      "speedup": 1.72
     }
   ]
 }

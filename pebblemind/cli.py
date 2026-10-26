@@ -3,6 +3,7 @@
 import asyncio
 import sys
 import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -799,19 +800,25 @@ def add_docs(ctx: click.Context, documents: tuple, recursive: bool):
             path = Path(doc_path)
 
             if path.is_file():
-                # Single file
-                if path.suffix.lower() in ['.txt', '.md', '.pdf', '.docx']:
+                # Single file — only text formats are safe with read_text();
+                # PDFs/DOCX are binary and need proper extractors.
+                if path.suffix.lower() in ['.txt', '.md']:
                     doc_list.append({
                         "content": path.read_text(),
                         "metadata": {"source": str(path), "type": path.suffix}
                     })
+                elif path.suffix.lower() in ['.pdf', '.docx']:
+                    console.print(
+                        f"[yellow]Skipping {path.name}: PDF/DOCX extraction needs a "
+                        f"converter (e.g. pdftotext). Convert to .txt or .md first.[/yellow]"
+                    )
                 else:
                     console.print(f"[yellow]Skipping unsupported file: {path}[/yellow]")
 
             elif path.is_dir() and recursive:
                 # Directory with recursion
                 for file_path in path.rglob("*"):
-                    if file_path.is_file() and file_path.suffix.lower() in ['.txt', '.md', '.pdf', '.docx']:
+                    if file_path.is_file() and file_path.suffix.lower() in ['.txt', '.md']:
                         try:
                             doc_list.append({
                                 "content": file_path.read_text(),
@@ -819,6 +826,8 @@ def add_docs(ctx: click.Context, documents: tuple, recursive: bool):
                             })
                         except Exception as e:
                             console.print(f"[yellow]Error reading {file_path}: {e}[/yellow]")
+                    elif file_path.is_file() and file_path.suffix.lower() in ['.pdf', '.docx']:
+                        console.print(f"[yellow]Skipping {file_path.name}: binary format (convert to .txt/.md)[/yellow]")
 
         if not doc_list:
             console.print("[red]No valid documents found[/red]")
@@ -834,6 +843,59 @@ def add_docs(ctx: click.Context, documents: tuple, recursive: bool):
 
     except Exception as e:
         console.print(f"[red]Error adding documents: {e}[/red]")
+
+
+@cli.command("ask-docs")
+@click.argument("question")
+@click.option("--k", default=3, help="Number of passages to retrieve")
+@click.option("--no-answer", is_flag=True, help="Only show retrieved passages (skip LLM answer)")
+@click.pass_context
+def ask_docs(ctx: click.Context, question: str, k: int, no_answer: bool):
+    """Ask a question about previously added documents (RAG)"""
+    config = ctx.obj["config"]
+
+    try:
+        pebblemind = quick_start()
+
+        async def answer():
+            if pebblemind.rag_system is None:
+                console.print("[red]RAG system unavailable — check your config[/red]")
+                return
+            hits = await pebblemind.rag_system.search(question, k=k)
+            if not hits:
+                console.print("[yellow]No matching documents. Add some first:[/yellow]")
+                console.print("  pebblemind add-docs <files>")
+                return
+
+            console.print("\n[bold blue]📄 Retrieved passages[/bold blue]")
+            context = []
+            for i, h in enumerate(hits, 1):
+                src = h.get("metadata", {}).get("source", "unknown")
+                score = h.get("score", 0)
+                content = h.get("content", "")
+                context.append(content)
+                console.print(f"\n[bold]{i}.[/bold] [dim](score {score:.3f}, {src})[/dim]")
+                console.print(f"   {content[:300]}{'…' if len(content) > 300 else ''}")
+
+            if no_answer:
+                return
+            if pebblemind.llm_engine is None:
+                console.print("[yellow]No LLM backend — showing passages only[/yellow]")
+                return
+
+            t0 = time.perf_counter()
+            reply = await pebblemind.llm_engine.generate(
+                f"Answer in at most 80 words using ONLY the provided context.\n\n"
+                f"Context:\n" + "\n\n".join(context) + f"\n\nQuestion: {question}",
+                max_tokens=120,
+            )
+            dt = time.perf_counter() - t0
+            console.print(f"\n[bold green]💬 Answer[/bold green] [dim]({dt:.1f}s)[/dim]")
+            console.print(reply)
+
+        asyncio.run(answer())
+    except Exception as e:
+        console.print(f"[red]Error in ask-docs: {e}[/red]")
 
 
 @cli.command()
