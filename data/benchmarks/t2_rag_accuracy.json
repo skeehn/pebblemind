@@ -1,0 +1,88 @@
+{
+  "embedding_backend": "SentenceTransformer",
+  "top1": 6,
+  "top3": 7,
+  "total": 8,
+  "details": [
+    {
+      "q": "Which embedding dimension does the RAG system use?",
+      "expected": "readme",
+      "got": [
+        "how-it-works",
+        "rag",
+        "models"
+      ],
+      "top1": false
+    },
+    {
+      "q": "What cache eviction policy does PebbleMind use?",
+      "expected": "cache-docs",
+      "got": [
+        "license",
+        "cache-docs",
+        "readme"
+      ],
+      "top1": false
+    },
+    {
+      "q": "Which model is recommended for 16GB RAM machines?",
+      "expected": "models",
+      "got": [
+        "models",
+        "models",
+        "reliability"
+      ],
+      "top1": true
+    },
+    {
+      "q": "What license does PebbleMind use?",
+      "expected": "license",
+      "got": [
+        "license",
+        "readme",
+        "models"
+      ],
+      "top1": true
+    },
+    {
+      "q": "What speech technology handles text-to-speech output?",
+      "expected": "voice",
+      "got": [
+        "voice",
+        "api",
+        "models"
+      ],
+      "top1": true
+    },
+    {
+      "q": "Which endpoint serves chat completions?",
+      "expected": "api",
+      "got": [
+        "api",
+        "cache-docs",
+        "rag"
+      ],
+      "top1": true
+    },
+    {
+      "q": "How does the embedding backend degrade when deps are missing?",
+      "expected": "rag",
+      "got": [
+        "rag",
+        "how-it-works",
+        "reliability"
+      ],
+      "top1": true
+    },
+    {
+      "q": "What retry strategy does error handling use?",
+      "expected": "reliability",
+      "got": [
+        "reliability",
+        "cache-docs",
+        "models"
+      ],
+      "top1": true
+    }
+  ]
+}

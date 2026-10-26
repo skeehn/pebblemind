@@ -59,6 +59,11 @@ class LLMEngine:
         self._gpu_layers_available = 0
         self.backend_name: str = "unselected"
         self._hf_pipe = None
+        # llama.cpp (and HF pipelines) are NOT safe for concurrent decode on
+        # one context — overlapping llama_decode calls abort the process.
+        # Serialize local-engine generation; Ollama (separate server process)
+        # needs no lock.
+        self._engine_lock = asyncio.Lock()
 
     def _detect_gpu_availability(self) -> bool:
         """Detect if GPU is available for offloading"""
@@ -259,9 +264,14 @@ class LLMEngine:
                 import multiprocessing
                 self.config.threads = min(6, max(2, multiprocessing.cpu_count() - 2))
                 
-            if self.config.context_length > 2048:
-                # Reduce context length for better memory efficiency on lightweight devices
-                self.config.context_length = min(self.config.context_length, 2048)
+            if self.config.context_length > 4096:
+                # Hard cap for memory predictability on lightweight devices;
+                # 4096 matches the installer's default for >=12GB machines.
+                self.config.context_length = min(self.config.context_length, 4096)
+                logger.warning(
+                    "Context length capped to %d for lightweight devices",
+                    self.config.context_length,
+                )
 
             # Set BLAS optimization environment variables
             if self.config.enable_blas:
@@ -423,15 +433,18 @@ class LLMEngine:
             if self.backend_name == "ollama":
                 return await self._generate_ollama(messages, **kwargs)
             if self.backend_name == "huggingface":
-                return await self._generate_hf(messages, **kwargs)
+                async with self._engine_lock:
+                    return await self._generate_hf(messages, **kwargs)
             generation_params = self._build_generation_params(messages, stream=False, **kwargs)
 
-            # Run generation in thread pool to avoid blocking
+            # Run generation in thread pool to avoid blocking; the engine lock
+            # prevents concurrent llama_decode calls (which abort in ggml).
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.model.create_chat_completion(**generation_params)
-            )
+            async with self._engine_lock:
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: self.model.create_chat_completion(**generation_params)
+                )
 
             # Extract the response text
             if "choices" in response and response["choices"]:
@@ -468,23 +481,26 @@ class LLMEngine:
                 return
             generation_params = self._build_generation_params(messages, stream=True, **kwargs)
 
-            # Stream the response
+            # Stream while holding the engine lock: the lock releases when the
+            # generator completes or is closed, so concurrent callers queue up
+            # instead of crashing ggml with overlapping decodes.
             loop = asyncio.get_event_loop()
-            stream = await loop.run_in_executor(
-                None,
-                lambda: self.model.create_chat_completion(**generation_params)
-            )
+            async with self._engine_lock:
+                stream = await loop.run_in_executor(
+                    None,
+                    lambda: self.model.create_chat_completion(**generation_params)
+                )
 
-            for chunk in stream:
-                # Allow external cancellation
-                if stop_event and stop_event.is_set():
-                    break
-                if "choices" in chunk and chunk["choices"]:
-                    delta = chunk["choices"][0].get("delta", {})
-                    if "content" in delta:
-                        yield delta["content"]
-                # Yield control to event loop for backpressure
-                await asyncio.sleep(0)
+                for chunk in stream:
+                    # Allow external cancellation
+                    if stop_event and stop_event.is_set():
+                        break
+                    if "choices" in chunk and chunk["choices"]:
+                        delta = chunk["choices"][0].get("delta", {})
+                        if "content" in delta:
+                            yield delta["content"]
+                    # Yield control to event loop for backpressure
+                    await asyncio.sleep(0)
 
         except Exception as e:
             logger.error(f"Error in streaming generation: {e}")

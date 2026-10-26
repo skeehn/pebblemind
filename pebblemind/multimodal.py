@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 from typing import Dict, Any, Optional, Union
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from io import BytesIO
 import time
@@ -189,7 +192,7 @@ class MultiModalManager:
         try:
             self.image_processor = ImageProcessor()
         except ImportError as e:
-            print(f"Warning: Image processing not available: {e}")
+            logger.warning("Image processing not available: %s", e)
             self.image_processor = None
     
     async def process_multimodal_input(self, 

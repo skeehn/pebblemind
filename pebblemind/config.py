@@ -81,6 +81,23 @@ class DesktopConfig(BaseModel):
     start_minimized: bool = Field(default=False, description="Start minimized")
 
 
+class ToolsConfig(BaseModel):
+    """Configuration for built-in tools (web access is opt-in for privacy)."""
+    web_access: bool = Field(default=False, description="Enable web_search/web_fetch tools (requires internet)")
+
+
+class MCPConfig(BaseModel):
+    """Configuration for Model Context Protocol servers.
+
+    Each entry maps a name to a server spec: either {"command": [exe, args...]}
+    for stdio servers or {"url": "http://..."} for HTTP endpoints.
+    """
+    servers: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="MCP servers, e.g. {'filesystem': {'command': ['npx', '-y', '@modelcontextprotocol/server-filesystem', '/tmp']}}",
+    )
+
+
 class Config(BaseModel):
     """Main configuration class"""
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -88,6 +105,8 @@ class Config(BaseModel):
     rag: RAGConfig = Field(default_factory=RAGConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     desktop: DesktopConfig = Field(default_factory=DesktopConfig)
+    tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
 
     data_dir: str = Field(default="./data", description="Data directory")
     cache_dir: str = Field(default="./cache", description="Cache directory")
@@ -149,7 +168,12 @@ def set_config(config: Config) -> None:
 
 
 def load_config(config_path: Optional[str] = None) -> Config:
-    """Load configuration from file or create default"""
+    """Load configuration from file or create default.
+
+    Precedence: explicit path > $PEBBLEMIND_CONFIG env var > ./pebblemind.yaml > defaults.
+    """
+    if not config_path:
+        config_path = os.environ.get("PEBBLEMIND_CONFIG") or None
     if config_path and Path(config_path).exists():
         config = Config.from_file(config_path)
     else:

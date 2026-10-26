@@ -17,7 +17,7 @@ MAC_SMALL_MODELS = {
     "smollm2-135m": {
         "ollama": "smollm2:135m",
         "hf": "HuggingFaceTB/SmolLM2-135M-Instruct",
-        "gguf_url": "https://huggingface.co/HuggingFaceTB/smollm2-135m-instruct-gguf/resolve/main/smollm2-135m-instruct-q4_k_m.gguf",
+        "gguf_url": "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf",
         "size_gb": 0.2,
         "ram_gb": 2,
     },
@@ -31,7 +31,7 @@ MAC_SMALL_MODELS = {
     "qwen3-0.6b": {
         "ollama": "qwen3:0.6b",
         "hf": "Qwen/Qwen3-0.6B",
-        "gguf_url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
+        "gguf_url": "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
         "size_gb": 0.5,
         "ram_gb": 2,
     },
@@ -59,7 +59,7 @@ MAC_SMALL_MODELS = {
     "qwen3-1.7b": {
         "ollama": "qwen3:1.7b",
         "hf": "Qwen/Qwen3-1.7B",
-        "gguf_url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
+        "gguf_url": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
         "size_gb": 1.2,
         "ram_gb": 4,
     },
@@ -103,7 +103,7 @@ MAC_SMALL_MODELS = {
     "qwen2.5-7b": {
         "ollama": "qwen2.5:7b",
         "hf": "Qwen/Qwen2.5-7B-Instruct",
-        "gguf_url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
+        "gguf_url": "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
         "size_gb": 4.4,
         "ram_gb": 16,
     },

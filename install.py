@@ -197,9 +197,9 @@ def download_model(model_size: str, force: bool = False) -> bool:
             "sha256": None
         },
         "7b": {
-            "url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
-            "filename": "qwen2.5-7b-instruct-q4_k_m.gguf",
-            "size_mb": 4370,
+            "url": "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+            "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+            "size_mb": 4680,
             "sha256": None
         }
     }

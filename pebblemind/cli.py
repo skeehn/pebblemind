@@ -1013,6 +1013,59 @@ def init(ctx: click.Context, output: Optional[str]):
         console.print(f"[red]Error creating configuration: {e}[/red]")
 
 
+@cli.group()
+def mcp():
+    """Model Context Protocol: serve PebbleMind over MCP or inspect servers"""
+
+
+@mcp.command("serve")
+@click.pass_context
+def mcp_serve(ctx: click.Context):
+    """Run PebbleMind as an MCP server (stdio JSON-RPC)"""
+    from .mcp_server import MCPServer
+
+    async def _serve():
+        server = MCPServer()
+        await server.serve_stdio()
+
+    try:
+        console.print("[dim]PebbleMind MCP server running on stdio (Ctrl+C to stop)[/dim]")
+        asyncio.run(_serve())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        console.print(f"[red]MCP server error: {e}[/red]")
+
+
+@mcp.command("list")
+@click.pass_context
+def mcp_list(ctx: click.Context):
+    """List tools exposed by configured MCP servers"""
+    config = ctx.obj["config"]
+    servers = getattr(config.mcp, "servers", {})
+    if not servers:
+        console.print("No MCP servers configured. Add to pebblemind.yaml:")
+        console.print("\n[bold]mcp:[/bold]")
+        console.print("  servers:")
+        console.print('    filesystem: {command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]}')
+        return
+    from .mcp_client import MCPClientManager
+
+    async def _list():
+        mgr = MCPClientManager.from_config(servers)
+        await mgr.start()
+        for name, tools in mgr.all_tools().items():
+            console.print(f"\n[bold green]{name}[/bold green] ({len(tools)} tools)")
+            for t in tools:
+                console.print(f"  • [bold]{t.get('name')}[/bold] — {t.get('description', '')[:80]}")
+        await mgr.stop()
+
+    try:
+        asyncio.run(_list())
+    except Exception as e:
+        console.print(f"[red]MCP list error: {e}[/red]")
+
+
 def main():
     """Main entry point"""
     cli()
