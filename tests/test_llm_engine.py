@@ -240,9 +240,9 @@ class TestLLMEngine:
                     "Focus on being helpful while maintaining efficiency."
                 ),
             },
+            {"role": "system", "content": "Context: Context 1"},
             {"role": "system", "content": "Context: Context 2"},
             {"role": "system", "content": "Context: Context 3"},
-            {"role": "system", "content": "Context: Context 4"},
             {"role": "user", "content": "Test message"},
         ]
 

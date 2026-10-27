@@ -50,8 +50,8 @@ class RAGConfig(BaseModel):
     ollama_embed_model: str = Field(default="nomic-embed-text", description="Ollama embedding model")
     embedding_dim: int = Field(default=384, description="Embedding dimension")
     vector_db_path: str = Field(default="./data/vectors.db", description="Vector database path")
-    chunk_size: int = Field(default=512, description="Document chunk size")
-    chunk_overlap: int = Field(default=32, description="Overlap between chunks (reduced for efficiency)")
+    chunk_size: int = Field(default=160, description="Document chunk size in words (~200 tokens)")
+    chunk_overlap: int = Field(default=32, description="Word overlap between chunks")
     max_results: int = Field(default=3, description="Maximum search results (reduced for efficiency)")
     similarity_threshold: float = Field(default=0.7, description="Similarity threshold")
 

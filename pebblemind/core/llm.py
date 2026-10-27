@@ -8,6 +8,7 @@ when nothing is available so PebbleMind can degrade gracefully.
 
 import asyncio
 import logging
+import math
 import re
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -53,6 +54,11 @@ class LLMEngine:
     def __init__(self, config: LLMConfig):
         """Initialize LLM engine with configuration"""
         self.config = config
+        if config.context_length > 4096:
+            # Hard cap for memory predictability on lightweight devices;
+            # 4096 matches the installer's default for >=12GB machines.
+            config.context_length = 4096
+            logger.warning("Context length capped to 4096 for lightweight devices")
         self.model: Optional[Llama] = None
         self._initialized = False
         self._gpu_available = False
@@ -264,15 +270,6 @@ class LLMEngine:
                 import multiprocessing
                 self.config.threads = min(6, max(2, multiprocessing.cpu_count() - 2))
                 
-            if self.config.context_length > 4096:
-                # Hard cap for memory predictability on lightweight devices;
-                # 4096 matches the installer's default for >=12GB machines.
-                self.config.context_length = min(self.config.context_length, 4096)
-                logger.warning(
-                    "Context length capped to %d for lightweight devices",
-                    self.config.context_length,
-                )
-
             # Set BLAS optimization environment variables
             if self.config.enable_blas:
                 self._configure_blas()
@@ -377,7 +374,23 @@ class LLMEngine:
             "top_p": kwargs.get("top_p", self.config.top_p),
             "top_k": kwargs.get("top_k", self.config.top_k),
             "num_predict": min(kwargs.get("max_tokens", self.config.max_tokens), 512),
+            # Ollama silently defaults to a 2048 window; without num_ctx an
+            # over-budget RAG prompt is rejected with a confusing 400.
+            "num_ctx": self.config.context_length,
         }
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Conservative token estimate without a tokenizer: words*1.35, but at
+        least chars/3.2 (dense code and markdown tokenize worse than prose)."""
+        return max(1, math.ceil(max(len(text.split()) * 1.35, len(text) / 3.2)))
+
+    def _fit_text(self, text: str, token_budget: int) -> str:
+        """Word-aware truncation of ``text`` to roughly ``token_budget`` tokens."""
+        if token_budget <= 0 or self._estimate_tokens(text) <= token_budget:
+            return text if token_budget > 0 else ""
+        ratio = self._estimate_tokens(text) / max(1, len(text.split()))
+        keep = max(1, int(token_budget * 0.92 / ratio))
+        return " ".join(text.split()[:keep]) + " …"
 
     async def _generate_ollama(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """Generate via Ollama in a thread pool (httpx is sync here)."""
@@ -429,7 +442,10 @@ class LLMEngine:
             raise RuntimeError("LLM engine not initialized")
 
         try:
-            messages = self._build_messages(message, context=context, system_prompt=system_prompt)
+            messages = self._build_messages(
+                message, context=context, system_prompt=system_prompt,
+                max_tokens=kwargs.get("max_tokens"),
+            )
             if self.backend_name == "ollama":
                 return await self._generate_ollama(messages, **kwargs)
             if self.backend_name == "huggingface":
@@ -469,7 +485,10 @@ class LLMEngine:
             raise RuntimeError("LLM engine not initialized")
 
         try:
-            messages = self._build_messages(message, context=context, system_prompt=system_prompt)
+            messages = self._build_messages(
+                message, context=context, system_prompt=system_prompt,
+                max_tokens=kwargs.get("max_tokens"),
+            )
             if self.backend_name in ("ollama", "huggingface"):
                 # Chunk the full response for a uniform streaming API
                 text = await self.generate(message, context=context, system_prompt=system_prompt, **kwargs)
@@ -511,21 +530,34 @@ class LLMEngine:
         message: str,
         context: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None,
     ) -> List[Dict[str, str]]:
-        """Build conversation messages consistently for regular and streaming generation."""
-        messages: List[Dict[str, str]] = []
+        """Build conversation messages bounded to the configured context window.
+
+        RAG passages arrive ranked best-first, so keep the strongest ones and
+        hard-cap the whole prompt: Ollama rejects oversized requests with a
+        400 and llama.cpp silently truncates from the left.
+        """
+        gen_tokens = min(max_tokens if max_tokens is not None else self.config.max_tokens, 512)
+        budget = max(256, self.config.context_length - gen_tokens - 64)  # 64: chat-template overhead
+
+        system_content = self._fit_text(system_prompt or DEFAULT_SYSTEM_PROMPT, budget // 2)
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system_content}]
+        used = self._estimate_tokens(system_content)
+        reserve = min(self._estimate_tokens(message), budget - used)
+
+        for ctx in (context or [])[:3]:
+            remaining = budget - used - reserve
+            if remaining < 128:
+                break
+            ctx = self._fit_text(ctx, min(remaining, budget // 3))
+            used += self._estimate_tokens(ctx)
+            messages.append({"role": "system", "content": f"Context: {ctx}"})
 
         messages.append({
-            "role": "system",
-            "content": system_prompt or DEFAULT_SYSTEM_PROMPT,
+            "role": "user",
+            "content": self._fit_text(message, max(64, min(reserve, budget - used))),
         })
-
-        if context:
-            recent_context = context[-3:] if len(context) > 3 else context
-            for ctx in recent_context:
-                messages.append({"role": "system", "content": f"Context: {ctx}"})
-
-        messages.append({"role": "user", "content": message})
         return messages
 
     def _build_generation_params(

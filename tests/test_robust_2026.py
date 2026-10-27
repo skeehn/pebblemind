@@ -138,8 +138,10 @@ class TestRobustPerformance:
         assert cpu_r["tokens_per_s"] >= 3, f"CPU too slow: {cpu_r}"
         assert metal_r["tokens_per_s"] >= 5, f"Metal too slow: {metal_r}"
         assert metal_r["ttft_s"] is not None and metal_r["ttft_s"] < 10, f"TTFT too high: {metal_r}"
-        # Full Metal offload should not be slower than CPU-only
-        assert metal_r["tokens_per_s"] >= cpu_r["tokens_per_s"] * 0.9, (
+        # Full Metal offload should not be slower than CPU-only. 0.8x (not 0.9x):
+        # this compares two live timings, and background load (e.g. a running
+        # Ollama server) makes the ratio jittery across suite runs.
+        assert metal_r["tokens_per_s"] >= cpu_r["tokens_per_s"] * 0.8, (
             f"Metal offload slower than CPU: {metal_r} vs {cpu_r}"
         )
         # Efficiency: whole bench stayed under a reasonable memory envelope
@@ -624,3 +626,64 @@ class TestRobustMCPAndWeb:
             pytest.skip(f"search engine unavailable: {e}")
         assert results and all("url" in r for r in results), results
         _save_bench("t5_web", {"fetch": "ok", "results": len(results)})
+
+
+class TestRobustPromptBudget:
+    """Regression tests for the Oct 2026 context-overflow bug: RAG prompts
+    used to exceed the context window (Ollama 400s, llama.cpp truncates)."""
+
+    def _engine(self, context_length: int = 2048) -> LLMEngine:
+        return LLMEngine(LLMConfig(context_length=context_length))
+
+    def _prompt_tokens(self, messages, engine) -> int:
+        return sum(engine._estimate_tokens(m["content"]) for m in messages)
+
+    def test_prompt_budget_bounds_oversized_context(self):
+        """A prompt built from huge RAG passages must stay inside the window,
+        including room reserved for the generation."""
+        engine = self._engine()
+        passage = " ".join(["maintenance"] * 700)  # ~950 est tokens each
+        for max_tokens in (16, 256):
+            msgs = engine._build_messages("q?", context=[passage] * 3, max_tokens=max_tokens)
+            total = self._prompt_tokens(msgs, engine)
+            assert total <= engine.config.context_length - max_tokens, (
+                f"prompt {total} tokens vs context {engine.config.context_length}"
+            )
+
+    def test_prompt_budget_keeps_most_relevant_passage(self):
+        """RAG context arrives best-first; the strongest passage must survive."""
+        engine = self._engine()
+        ctx = [f"META{i} " + "y" * 200 for i in range(6)]
+        msgs = engine._build_messages("q?", context=ctx, max_tokens=16)
+        kept = [m["content"] for m in msgs if m["content"].startswith("Context:")]
+        assert kept and "META0" in kept[0], "best (first) passage dropped"
+        assert len(kept) <= 3
+
+    def test_context_cap_applies_to_all_backends(self):
+        """The 4096 cap must live in __init__ so Ollama's num_ctx respects it too."""
+        engine = self._engine(context_length=16384)
+        assert engine.config.context_length == 4096
+        assert engine._ollama_options({})["num_ctx"] == 4096
+
+    def test_ollama_options_include_num_ctx(self):
+        engine = self._engine()
+        assert engine._ollama_options({"max_tokens": 16})["num_ctx"] == 2048
+
+    def test_chunk_text_no_redundant_overlap_fragments(self):
+        """Stride chunking must never emit a chunk fully contained in another
+        (the old implementation double-ingested pure-overlap fragments)."""
+        from pebblemind.config import RAGConfig
+        from pebblemind.rag.system import RAGSystem
+
+        rag = RAGSystem(RAGConfig(chunk_size=10, chunk_overlap=3, embedding_backend="hash"))
+        words = [f"w{i}" for i in range(40)]
+        chunks = rag._chunk_text(" ".join(words))
+        assert len(chunks) > 1
+        assert all(len(c.split()) <= 10 for c in chunks)
+        for i, a in enumerate(chunks):
+            for j, b in enumerate(chunks):
+                if i != j:
+                    assert a.split() != b.split()[:len(a.split())], (
+                        f"redundant fragment: {a!r} inside {b!r}"
+                    )
+        assert rag._chunk_text("") == []

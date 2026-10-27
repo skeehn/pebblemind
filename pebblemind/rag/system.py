@@ -250,26 +250,24 @@ class RAGSystem:
                 return {}
 
     def _chunk_text(self, text: str) -> List[str]:
-        """Split text into chunks for embedding"""
+        """Split text into overlapping word chunks for embedding.
+
+        Stride = chunk_size - chunk_overlap, so consecutive chunks overlap
+        without emitting redundant fragments (which polluted the index and
+        doubled ingest cost).
+        """
         words = text.split()
-        chunks = []
-
-        for i in range(0, len(words), self.config.chunk_size - self.config.chunk_overlap):
-            chunk = " ".join(words[i:i + self.config.chunk_size])
-            chunks.append(chunk)
-
-            # Add overlap for next chunk
-            if i + self.config.chunk_size < len(words):
-                overlap_start = max(0, i + self.config.chunk_size - self.config.chunk_overlap)
-                if overlap_start < len(words):
-                    overlap_chunk = " ".join(words[overlap_start:i + self.config.chunk_size])
-                    if len(overlap_chunk.split()) >= self.config.chunk_overlap:
-                        chunks.append(overlap_chunk)
-
-        return list(set(chunks))  # Remove duplicates
+        if not words:
+            return []
+        stride = max(1, self.config.chunk_size - self.config.chunk_overlap)
+        chunks = [
+            " ".join(words[i:i + self.config.chunk_size])
+            for i in range(0, len(words), stride)
+        ]
+        return list(dict.fromkeys(chunks))  # dedupe, preserve order
 
     def _extract_search_terms(self, query: str) -> List[str]:
-        """Extract normalized terms for fallback text search.
+        r"""Extract normalized terms for fallback text search.
 
         Terms are extracted from lowercase word tokens matched by `\w` (so
         letters, digits, and underscores are included). Short tokenized words
