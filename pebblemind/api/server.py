@@ -213,7 +213,7 @@ class APIServer:
         prepared = prepare_inputs(
             message,
             use_rag=True,
-            enhance_reasoning=True,
+            enhance_reasoning=False,
             reasoning_type="analytical",
             use_memory=True,
         )

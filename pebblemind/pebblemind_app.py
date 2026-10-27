@@ -194,6 +194,10 @@ class PebbleMind:
             )
 
             # Initialize RAG system with efficiency considerations
+            # Rebase the default vector DB path onto the configured data dir
+            # so data_dir=/tmp/x doesn't scatter vectors.db into the CWD.
+            if self.config.rag.vector_db_path == "./data/vectors.db":
+                self.config.rag.vector_db_path = str(self.config.data_path / "vectors.db")
             self.rag_system = await self._create_optional_component(
                 ".rag",
                 "RAGSystem",
@@ -325,7 +329,7 @@ class PebbleMind:
         message: str,
         context: Optional[List[str]] = None,
         use_rag: bool = True,
-        enhance_reasoning: bool = True,
+        enhance_reasoning: bool = False,
         reasoning_type: Optional[str] = "analytical",
         use_memory: bool = True,
         use_tools: bool = True,
@@ -436,7 +440,7 @@ class PebbleMind:
         self,
         message: str,
         use_rag: bool = True,
-        enhance_reasoning: bool = True,
+        enhance_reasoning: bool = False,
         reasoning_type: Optional[str] = "analytical",
         use_memory: bool = True,
     ) -> Tuple[str, List[str]]:

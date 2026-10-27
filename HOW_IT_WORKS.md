@@ -377,40 +377,50 @@ conn = sqlite3.connect("vectors.db")  # Single file!
 
 ### Document Chunking Strategy
 
-**Problem**: Documents are often longer than context window.
+**Problem**: Documents are often longer than context window — and naive
+stride chunking cuts sentences in half, leaving target phrases unindexed.
 
-**Solution**: Smart chunking with overlap:
+**Solution**: Sentence-aware chunking (as shipped in
+`pebblemind/rag/system.py::_chunk_text`):
 
 ```python
-def chunk_document(text, chunk_size=512, overlap=50):
-    """
-    chunk_size: Max words per chunk
-    overlap: Words to overlap between chunks
-    """
-    words = text.split()
-
-    chunks = []
-    for i in range(0, len(words), chunk_size - overlap):
-        chunk = words[i:i + chunk_size]
-        chunks.append(' '.join(chunk))
-
-    return chunks
-
-# Example:
-text = "word1 word2 word3 ... word1000"
-chunks = chunk_document(text, chunk_size=200, overlap=20)
-# Chunk 1: words 1-200
-# Chunk 2: words 181-380  (overlap of 20)
-# Chunk 3: words 361-560  (overlap of 20)
-# ...
+sentences = re.split(r"(?<=[.!?])\s+", text)   # split at real boundaries
+# pack whole sentences to ~chunk_size words; carry trailing sentence(s)
+# into the next chunk when they fit the overlap budget
+# (text with no punctuation falls back to stride word windows)
 ```
 
-**Why overlap?**
-- Prevents information split across boundaries
-- Maintains context at edges
-- Better semantic coherence
+Example: chunk_size 160, overlap 32 →
+
+```
+Chunk 1: sentences 1..k        (~160 words, never mid-sentence)
+Chunk 2: last sentence of #1 + sentences k+1..m
+...
+```
+
+**Why sentence boundaries?**
+- Every chunk is a coherent semantic unit (cleaner embeddings)
+- A phrase is never split across two chunks and lost from the index
+  (verified: on a 55K-word book, stride chunking lost whole verses)
+- Sentence-aligned overlap keeps edge context without duplicating
+  pure-overlap fragments
 
 ### Vector Search Optimization
+
+**Hybrid scoring** (as shipped in `search()`): pure vector ranking
+compresses scores on long repetitive documents — every chunk sounds like
+every other (measured spread 0.68–0.73 on a 55K-word book), so the true
+match can sit at rank ~37. The shipped search blends vector similarity
+with keyword overlap:
+
+```python
+final_score = (1.0 - cosine_distance) + 0.3 * keyword_overlap
+# keyword_overlap = fraction of query terms present in the chunk
+# candidates: top (8k, 50) by vector distance, then re-ranked and cut to k
+```
+
+This rescued near-verbatim matches on the big-document benchmark
+(top-3 hits 1/4 → 2/4) while keeping SQL-only candidate fetch.
 
 **Cosine Similarity** (how we find similar documents):
 
@@ -433,15 +443,14 @@ cosine_similarity(query, doc1)  # 0.98 (very similar)
 cosine_similarity(query, doc2)  # -0.98 (very different)
 ```
 
-**Optimization: Int8 Quantization**
+**Storage: float32 embeddings**
 
 ```python
-# Original (float32): 384 dims × 4 bytes = 1,536 bytes/vector
+# Shipped: float32 — 384 dims × 4 bytes = 1,536 bytes/vector
 embedding_f32 = np.array([0.23, -0.45, ...], dtype=np.float32)
-
-# Quantized (int8): 384 dims × 1 byte = 384 bytes/vector
-embedding_i8 = (embedding_f32 * 127).astype(np.int8)
-# 4x smaller, 4x faster search!
+# A 55K-word book ≈ 438 chunks ≈ 0.7MB of vectors — negligible.
+# (int8 quantization would be 4x smaller, but is not implemented;
+# don't rely on the older "int8 stored" claim.)
 ```
 
 ---

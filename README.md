@@ -296,7 +296,11 @@ SHA-256 fingerprints + complete GGUF metadata: [`data/benchmarks/gguf_metadata.j
 
 ### Real-world retrieval quality (October 2026 robust test suite)
 
-- RAG top-3 hit rate with real BGE-small embeddings: **7/8** questions
+- RAG top-3 hit rate with real BGE-small embeddings: **7/8** questions (synthetic + real RFC/NASA docs)
+- Big-document stress (55K-word Art of War, adversarial commentary-heavy corpus): sentence-aware
+  chunking + hybrid vector/keyword scoring lifted top-3 retrieval 1/4 → **2/4**; ingest **8.15s → 3.77s**
+  via Apple MPS embeddings (bit-identical rankings). Paraphrase questions on commentary-heavy
+  classical text remain the known limit of a 27M-param embedder (`data/benchmarks/t7_bigdoc.json`).
 - Concurrent safety: 6 parallel generations on one engine — queued, correct, no corruption
 - MCP round-trip: chat + document Q&A over the protocol with the real model
 

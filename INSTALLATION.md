@@ -37,7 +37,7 @@ pip install pytest pytest-asyncio pydantic pyyaml click rich numpy scipy
 # 3. Run tests to verify everything works
 python -m pytest tests/ -v
 
-# You should see: 79 passed in ~5 seconds ✅
+# You should see: 105 passed in ~1 minute ✅
 ```
 
 This verifies the code works, but won't actually run AI models yet.
