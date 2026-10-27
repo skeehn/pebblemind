@@ -269,20 +269,24 @@ class TestRobustReliabilityConcurrency:
         sstats = await small.get_stats()
         assert sstats["current_size"] <= 50, f"cache overflowed: {sstats}"
 
-        # (c) Retry with backoff under injected failures
-        from pebblemind.utils import error_handler as eh_mod
+        # (c) Ollama chat retries transient network errors with backoff
+        from unittest.mock import MagicMock, patch as mock_patch
+        import httpx as _httpx
+        from pebblemind.core import backends as _backends
 
         attempts = {"n": 0}
 
-        @eh_mod.with_retry(max_retries=3, retryable_exceptions=(ConnectionError,))
-        async def flaky():
+        def flaky_post(url, **kw):
             attempts["n"] += 1
-            if attempts["n"] < 3:
-                raise ConnectionError("injected failure")
-            return "ok"
+            if attempts["n"] < 2:
+                raise _httpx.ConnectError("injected failure")
+            ok = MagicMock()
+            ok.json.return_value = {"message": {"content": "ok"}}
+            return ok
 
-        assert await flaky() == "ok"
-        assert attempts["n"] == 3, f"expected 3 attempts, got {attempts['n']}"
+        with mock_patch("httpx.post", flaky_post), mock_patch("time.sleep"):
+            out = _backends.ollama_chat([{"role": "user", "content": "hi"}], "test-model")
+        assert out == "ok" and attempts["n"] == 2, (out, attempts)
 
         # (d) Concurrent generates through one engine (thread-safe path)
         if MODELS_15B.exists():

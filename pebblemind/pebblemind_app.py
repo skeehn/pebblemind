@@ -12,10 +12,6 @@ from .performance_monitor import PerformanceMonitor
 from .reasoning_enhancer import ReasoningEnhancer
 from .advanced_memory import EnhancedMemoryManager
 from .tool_integration import ToolManager, FunctionCallingManager
-from .specialized_agents import AgentOrchestrator
-from .multimodal import MultiModalManager
-from .external_services import ServiceIntegrationManager
-from .system_improvements import SystemImprovementManager, ComponentOrchestrator
 from .software_30 import SelfImprovementManager
 
 if TYPE_CHECKING:
@@ -144,22 +140,13 @@ class PebbleMind:
         # Tool integration
         self.tool_manager: ToolManager = ToolManager()
         self.function_calling_manager: FunctionCallingManager = FunctionCallingManager(self.tool_manager)
-        
-        # Specialized agents
-        self.agent_orchestrator: AgentOrchestrator = AgentOrchestrator()
-        
-        # Multi-modal capabilities
-        self.multimodal_manager: MultiModalManager = MultiModalManager()
-        
-        # External services integration
-        self.service_integration_manager: ServiceIntegrationManager = ServiceIntegrationManager()
-        
-        # System improvements
-        self.system_improvement_manager: SystemImprovementManager = SystemImprovementManager()
-        self.coordinator: ComponentOrchestrator = ComponentOrchestrator()
-        
+
         # Software 3.0 - Self-improving capabilities
         self.self_improvement_manager: SelfImprovementManager = SelfImprovementManager()
+
+        # Response cache: serves identical side-effect-free queries instantly
+        from .cache.response_cache import ResponseCache
+        self.response_cache: ResponseCache = ResponseCache(max_size=256, max_memory_mb=64)
 
         # Component status
         self._initialized = False
@@ -256,6 +243,8 @@ class PebbleMind:
 
             self._initialized = True
             logger.info("PebbleMind initialized successfully with lightweight optimizations")
+            if self.response_cache:
+                await self.response_cache.start()
 
         except Exception as e:
             logger.error(f"Failed to initialize PebbleMind: {e}")
@@ -322,6 +311,9 @@ class PebbleMind:
             if self.rag_system:
                 await self.rag_system.cleanup()
 
+            if self.response_cache:
+                await self.response_cache.stop()
+
             self._running = False
             logger.info("PebbleMind stopped successfully")
 
@@ -351,20 +343,28 @@ class PebbleMind:
         # prior context — storing it would compound context every session).
         original_message = message
         try:
+            # Response cache for side-effect-free queries (no tools, no memory):
+            # identical repeats return instantly instead of re-generating.
+            cacheable = (
+                not use_tools and not use_memory
+                and getattr(self, "response_cache", None) is not None
+            )
+            cache_key = (
+                self.response_cache._generate_key(
+                    original_message, use_rag, enhance_reasoning, reasoning_type
+                ) if cacheable else None
+            )
+            if cacheable:
+                cached, hit = await self.response_cache.get(cache_key)
+                if hit:
+                    return cached
+
             # Check if message contains tool calls or requires complex task execution
             if use_tools and self._contains_tool_syntax(message):
                 # Handle function calling for complex tasks
                 task_result = await self.function_calling_manager.plan_and_execute(message)
                 base_response = task_result["summary"]
-                
-                # Apply Software 3.0 optimization
-                if hasattr(self, 'self_improvement_manager'):
-                    optimized_response, opt_metadata = await self.self_improvement_manager.predict_and_optimize_response(
-                        message, base_response
-                    )
-                    response = optimized_response
-                else:
-                    response = base_response
+                response = base_response
 
                 await self.finalize_interaction(
                     original_message,
@@ -404,15 +404,11 @@ class PebbleMind:
                             else:
                                 tool_outputs.append(f"[{result['tool_name']}: Error - {result['error']}]")
                         base_response += "\n\nTools Output: " + " ".join(tool_outputs)
-                
-                # Apply Software 3.0 optimization
-                if hasattr(self, 'self_improvement_manager'):
-                    optimized_response, opt_metadata = await self.self_improvement_manager.predict_and_optimize_response(
-                        message, base_response
-                    )
-                    response = optimized_response
-                else:
-                    response = base_response
+
+                response = base_response
+
+                if cache_key:
+                    await self.response_cache.set(cache_key, response)
 
                 await self.finalize_interaction(
                     original_message,

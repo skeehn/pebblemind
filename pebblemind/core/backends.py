@@ -163,13 +163,24 @@ def ollama_chat(
     options: Optional[Dict[str, Any]] = None,
     timeout: float = 120.0,
 ) -> str:
-    """Non-streaming chat via Ollama /api/chat. Raises on error."""
+    """Non-streaming chat via Ollama /api/chat; retries transient network
+    errors with backoff. Raises on error."""
+    import time as _time
+
     import httpx
 
     payload: Dict[str, Any] = {"model": model, "messages": messages, "stream": False}
     if options:
         payload["options"] = options
-    r = httpx.post(f"{host.rstrip('/')}/api/chat", json=payload, timeout=timeout)
+    for attempt in range(3):
+        try:
+            r = httpx.post(f"{host.rstrip('/')}/api/chat", json=payload, timeout=timeout)
+            break
+        except httpx.TransportError as e:
+            if attempt == 2:
+                raise
+            logger.warning("Ollama chat transient error (%s), retrying", e)
+            _time.sleep(0.5 * (attempt + 1))
     r.raise_for_status()
     data = r.json()
     msg = data.get("message", {})

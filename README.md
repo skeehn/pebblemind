@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/skeehn/pebblemind/actions/workflows/ci.yml/badge.svg)](https://github.com/skeehn/pebblemind/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-152%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-102%20passing-brightgreen)](tests/)
 
 **Run AI models on your own computer. No internet, no cloud, no data sharing.**
 
@@ -35,7 +35,7 @@ Great for understanding how AI systems actually work, since you can see everythi
 
 ## Current Status
 
-✅ **Core Engine**: Fully working with 152/152 tests passing (incl. 7 real end-to-end robust tests)
+✅ **Core Engine**: Fully working with 102 tests passing (incl. 14 robust end-to-end tests)
 ✅ **Caching**: Production-ready LRU cache
 ✅ **Error Handling**: Automatic retries with exponential backoff
 ✅ **RAG System**: Vector search for documents
@@ -56,7 +56,7 @@ cd pebblemind
 # Install test dependencies
 pip install pytest pytest-asyncio pydantic numpy scipy
 
-# Run tests (should see 142 passing)
+# Run tests (should see 102 passing)
 python -m pytest tests/ -v
 ```
 
@@ -256,7 +256,7 @@ All models are quantized (Q4) for optimal size/quality balance.
 | MCP Server | ✅ Working | `pebblemind mcp serve` (stdio JSON-RPC) |
 | MCP Client | ✅ Working | Call external MCP servers, tools auto-registered |
 | Web Access | ✅ Working | Opt-in web_search / web_fetch |
-| Tests | ✅ 152 passing | + 7 real-model robust tests (Oct 2026) |
+| Tests | ✅ 102 passing | + 14 robust tests (Oct 2026) |
 | Voice I/O | 🚧 Partial | Framework there, needs polish |
 | CLI | ✅ Working | chat, doctor, models, mcp, config, serve |
 | Desktop App | 🚧 Planned | Tauri template exists |
@@ -294,7 +294,7 @@ PebbleMind/
 ├── mcp_client.py        # MCP client (call external MCP servers)
 ├── web_tools.py         # web_search / web_fetch (opt-in)
 ├── api/server.py        # REST API (OpenAI-compatible)
-└── tests/               # 152 comprehensive tests
+└── tests/               # 102 comprehensive tests
 ```
 
 **Key Technologies:**
@@ -308,7 +308,7 @@ PebbleMind/
 
 | Metric | Value |
 |--------|-------|
-| Tests | 142 passing |
+| Tests | 102 passing |
 | Test Coverage | ~75% (core: 100%) |
 | Type Hints | Yes, throughout |
 | Documentation | Comprehensive |

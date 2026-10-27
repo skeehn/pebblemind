@@ -11,16 +11,30 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import numpy as np
 
-try:
-    from sentence_transformers import SentenceTransformer
-except ImportError:
-    SentenceTransformer = None
-
 from ..config import RAGConfig
 from ..performance.connection_pool import ConnectionPool
 
 logger = logging.getLogger(__name__)
 FALLBACK_SEARCH_MIN_TERM_LENGTH = 3
+
+# Module attribute exists so tests can patch it, but holds a sentinel until
+# first use: sentence-transformers pulls in torch (~2s), so it must never be
+# imported eagerly (hash/ollama embeddings initialize torch-free).
+SentenceTransformer = _ST_UNSET = object()
+
+
+def _load_sentence_transformer():
+    """Import sentence-transformers on first use; a test patch (None/Mock)
+    short-circuits the import because the attribute is no longer the sentinel."""
+    global SentenceTransformer
+    if SentenceTransformer is not _ST_UNSET:
+        return SentenceTransformer
+    try:
+        from sentence_transformers import SentenceTransformer as _ST
+    except ImportError:
+        _ST = None
+    globals()["SentenceTransformer"] = _ST
+    return _ST
 
 
 class RAGSystem:
@@ -96,12 +110,12 @@ class RAGSystem:
             await self._setup_ollama_embeddings(explicit=True)
             return
         if requested == "sentence-transformers":
-            if SentenceTransformer is None:
+            if _load_sentence_transformer() is None:
                 raise ImportError("sentence-transformers not installed. Install with: pip install sentence-transformers")
             self._load_st_model()
             return
         # auto: ST if importable, else Ollama if reachable, else hash
-        if SentenceTransformer is not None:
+        if _load_sentence_transformer() is not None:
             try:
                 self._load_st_model()
                 return
