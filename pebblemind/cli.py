@@ -1,6 +1,7 @@
 """Command Line Interface for PebbleMind"""
 
 import asyncio
+import os
 import sys
 import json
 import time
@@ -1129,8 +1130,24 @@ def mcp_list(ctx: click.Context):
 
 
 def main():
-    """Main entry point"""
-    cli()
+    """CLI entry point.
+
+    Hard-exits via os._exit once the command finishes: the bundled ggml
+    Metal backend aborts during exit-time device teardown
+    (GGML_ASSERT([rsets->data count] == 0) — ggml-org/llama.cpp#17869),
+    which would turn successful runs into SIGABRT for return-code checks.
+    """
+    code = 0
+    try:
+        cli()
+    except SystemExit as e:
+        if isinstance(e.code, int) and e.code:
+            code = e.code
+    except KeyboardInterrupt:
+        code = 130
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 
 if __name__ == "__main__":

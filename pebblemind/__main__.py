@@ -1,6 +1,6 @@
 """Main entry point for pebblemind CLI"""
 
-from .cli import cli
+from .cli import main
 
 if __name__ == "__main__":
-    cli()
+    main()

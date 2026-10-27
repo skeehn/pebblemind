@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/skeehn/pebblemind/actions/workflows/ci.yml/badge.svg)](https://github.com/skeehn/pebblemind/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-102%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-105%20passing-brightgreen)](tests/)
 
 **Run AI models on your own computer. No internet, no cloud, no data sharing.**
 
@@ -35,7 +35,7 @@ Great for understanding how AI systems actually work, since you can see everythi
 
 ## Current Status
 
-✅ **Core Engine**: Fully working with 102 tests passing (incl. 14 robust end-to-end tests)
+✅ **Core Engine**: Fully working with 105 tests passing (incl. 14 robust end-to-end tests + 3 real-document RAG tests)
 ✅ **Caching**: Production-ready LRU cache
 ✅ **Error Handling**: Automatic retries with exponential backoff
 ✅ **RAG System**: Vector search for documents
@@ -56,7 +56,7 @@ cd pebblemind
 # Install test dependencies
 pip install pytest pytest-asyncio pydantic numpy scipy
 
-# Run tests (should see 102 passing)
+# Run tests (should see 105 passing)
 python -m pytest tests/ -v
 ```
 
@@ -256,7 +256,7 @@ All models are quantized (Q4) for optimal size/quality balance.
 | MCP Server | ✅ Working | `pebblemind mcp serve` (stdio JSON-RPC) |
 | MCP Client | ✅ Working | Call external MCP servers, tools auto-registered |
 | Web Access | ✅ Working | Opt-in web_search / web_fetch |
-| Tests | ✅ 102 passing | + 14 robust tests (Oct 2026) |
+| Tests | ✅ 105 passing | + 14 robust tests + 3 real-doc RAG tests (Oct 2026) |
 | Voice I/O | 🚧 Partial | Framework there, needs polish |
 | CLI | ✅ Working | chat, doctor, models, mcp, config, serve |
 | Desktop App | 🚧 Planned | Tauri template exists |
@@ -265,16 +265,17 @@ All models are quantized (Q4) for optimal size/quality balance.
 
 Benchmarks run against the **same Qwen2.5 GGUF weights** in both engines:
 
-| Path | Qwen2.5-1.5B | Qwen2.5-7B | Notes |
-|------|--------------|------------|-------|
-| Raw Ollama 0.40 (Metal) | 70.7 tok/s | 18.6 tok/s | engine-level |
-| PebbleMind llama.cpp backend (Metal, full offload) | 65.5 tok/s | 12.8 tok/s | ~93% of Ollama at 1.5B |
-| PebbleMind 1.5B CPU-only | 23.8 tok/s | — | no Metal needed |
-| PebbleMind full pipeline (Ollama backend) | ~51 words/s | — | RAG+memory+tools overhead ~15% |
+| Path | tok/s | Notes |
+|------|-------|-------|
+| Raw Ollama 0.40 (qwen2.5:1.5b) | 65.8 | engine-level reference |
+| PebbleMind llama.cpp 1.5B — **Metal full offload + flash-attn (the default on Mac now)** | 63.9 | 97% of Ollama, zero config |
+| PebbleMind llama.cpp 1.5B CPU-only | 47.1 | no Metal needed; 2× the pre-2026-10-26 default |
+| Ollama qwen3:4b (Thinking 2507) | 29.7 | other model family tested |
+| PebbleMind llama.cpp qwen3:4B — same GGUF, Metal + flash-attn | 26.6 | cross-source GGUF loading |
+| Ollama qwen2.5:7b | 16.1 | 16GB-class reference |
 
-- TTFT: 0.12s (1.5B Metal) / 0.19s (Ollama); model init 0.2–3.9s
-- On Mac, **both** paths are Metal-accelerated; llama-cpp-python now has no prebuilt macOS wheels, so PebbleMind builds it from source with `METAL=1` (the installer handles this).
-- Honest take: for 7B+ models prefer the Ollama backend; for 0.5B–3B the bundled llama.cpp is within ~8% of Ollama.
+- Measured with token-accurate counts (`scripts/bench_speed.py`), 96-token generations, temperature 0; Ollama numbers from its own `eval_count`/`eval_duration`.
+- On Mac, the llama.cpp backend now defaults to **Metal full offload + flash attention** — speed went from 23.8 to 63.9 tok/s out of the box (2.7×). `gpu_layers: -1` offloads all layers; ≤7B Q4_K_M fits 16GB unified memory easily.
 
 ### Verified provenance (Oct 2026)
 
@@ -284,8 +285,10 @@ Every claim above was checked against the **actual shipped artifacts**, not vend
 |----------|--------------|
 | Ollama binary | `v0.40.11` Go 1.27.3, mach-o arm64, built 2026-10-23, compiled with `-tags=mlx` → MLX enabled on Mac |
 | `libggml-metal.dylib` (bundled llama.cpp) | Full Metal backend: `ggml_metal_graph_compute` with **embedded shader library** (`GGML_METAL_EMBED_LIBRARY`), M1–M5 support |
+| `libllama.dylib` (bundled llama.cpp) | Flash attention (`llama_flash_attn_type_name`) + `llama_supports_gpu_offload` symbols; very recent llama.cpp (Llama 5 / Gemma 4 / Phi 3.5 / DeepSeek-V4 attention ops) — via REA objdump |
 | `qwen2.5-1.5b-instruct-q4_k_m.gguf` | Q4_K_M (file_type 15), arch `qwen2`, 339 tensors, vocab 151,936, native context 32,768 |
 | `qwen2.5-7b-instruct-q4_k_m.gguf` | Q4_K_M (file_type 15), arch `qwen2`, 339 tensors, vocab 152,064, native context 32,768 |
+| `qwen3:4b` (Ollama blob) | Q4_K_M, arch `qwen3` "Qwen3 4B Thinking 2507", 36 layers, native context **262,144**, Apache-2.0 |
 
 SHA-256 fingerprints + complete GGUF metadata: [`data/benchmarks/gguf_metadata.json`](data/benchmarks/gguf_metadata.json).
 
@@ -309,7 +312,7 @@ PebbleMind/
 ├── mcp_client.py        # MCP client (call external MCP servers)
 ├── web_tools.py         # web_search / web_fetch (opt-in)
 ├── api/server.py        # REST API (OpenAI-compatible)
-└── tests/               # 102 comprehensive tests
+└── tests/               # 105 comprehensive tests
 ```
 
 **Key Technologies:**
@@ -323,7 +326,7 @@ PebbleMind/
 
 | Metric | Value |
 |--------|-------|
-| Tests | 102 passing |
+| Tests | 105 passing |
 | Test Coverage | ~75% (core: 100%) |
 | Type Hints | Yes, throughout |
 | Documentation | Comprehensive |

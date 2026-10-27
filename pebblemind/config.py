@@ -1,6 +1,7 @@
 """Configuration management for PebbleMind"""
 
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 import yaml
@@ -23,12 +24,9 @@ class LLMConfig(BaseModel):
     top_p: float = Field(default=0.9, description="Top-p sampling parameter")
     top_k: int = Field(default=40, description="Top-k sampling parameter")
     threads: int = Field(default=-1, description="Number of threads (-1 for auto, conservative for lightweight devices)")
-    batch_size: int = Field(default=256, description="Batch size for processing (reduced for memory efficiency)")
-    enable_blas: bool = Field(default=True, description="Enable BLAS acceleration")
-    blas_vendor: str = Field(default="OpenBLAS", description="BLAS vendor to use")
-    enable_native: bool = Field(default=True, description="Enable native optimizations")
-    enable_gpu_offload: bool = Field(default=False, description="Enable GPU layer offloading (CPU-only by default for consistency)")
-    gpu_layers: int = Field(default=0, description="Number of layers to offload to GPU (-1 for auto)")
+    batch_size: int = Field(default=512, description="Prompt-processing batch size (n_batch/n_ubatch)")
+    enable_gpu_offload: bool = Field(default_factory=lambda: sys.platform == "darwin", description="Offload layers to GPU (default on for Metal on macOS)")
+    gpu_layers: int = Field(default=-1, description="Layers to offload (-1 = all layers)")
     auto_detect_gpu: bool = Field(default=True, description="Automatically detect and configure GPU")
 
 

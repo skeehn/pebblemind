@@ -12,7 +12,6 @@ import math
 import re
 from typing import Optional, List, Dict, Any
 from pathlib import Path
-import os
 import platform
 
 try:
@@ -270,59 +269,34 @@ class LLMEngine:
                 import multiprocessing
                 self.config.threads = min(6, max(2, multiprocessing.cpu_count() - 2))
                 
-            # Set BLAS optimization environment variables
-            if self.config.enable_blas:
-                self._configure_blas()
-
-            # Model loading parameters - optimized for lightweight devices
+            # Metal-first on Apple Silicon: Q4_K_M ≤7B fits unified memory
+            # (4.7GB for 7B vs ~12.7GB recommended working set on an M3).
             model_params = {
                 "model_path": model_path,
                 "n_ctx": self.config.context_length,
                 "n_threads": self.config.threads,
                 "n_batch": self.config.batch_size,
-                "verbose": False,  # Reduce logging noise
-                "n_gpu_layers": 0,  # CPU-only by default for consistent performance on all devices
-                "use_mlock": False,  # Disable mlock to reduce memory pressure on lightweight devices
-                "use_mmap": True,    # Use memory mapping for efficiency
-                "low_vram": True,    # Optimize for low VRAM (even though using CPU)
+                "n_ubatch": self.config.batch_size,
+                "verbose": False,
+                "use_mmap": True,
+                "n_gpu_layers": 0,
             }
 
-            # Add BLAS-specific optimizations if enabled
-            if self.config.enable_blas:
-                model_params.update({
-                    "blas_vendor": self.config.blas_vendor,
-                })
-
-            # Add native optimizations if enabled
-            if self.config.enable_native:
-                model_params["use_native"] = True
-
             # Only enable GPU offloading if explicitly requested and available
-            # For lightweight devices, CPU-only is often more predictable
             if self.config.enable_gpu_offload:
                 if self.config.auto_detect_gpu:
                     self._gpu_available = self._detect_gpu_availability()
                     logger.info(f"GPU detection: {'Available' if self._gpu_available else 'Not available'}")
-                
+
                 if self._gpu_available:
-                    if self.config.gpu_layers == -1:
-                        # Conservative GPU offloading for balanced performance
-                        if self.config.model_size == "1.5b":
-                            self.config.gpu_layers = 8
-                        elif self.config.model_size == "3b":
-                            self.config.gpu_layers = 16
-                        elif self.config.model_size == "7b":
-                            self.config.gpu_layers = 24  # Only for larger models where it makes sense
-                        else:
-                            self.config.gpu_layers = 16
-                    
+                    # -1 = offload every layer; flash attention is a strict win
+                    # on Metal (embedded fa_* kernels verified in libggml-metal).
                     model_params["n_gpu_layers"] = self.config.gpu_layers
+                    model_params["flash_attn"] = True
                     logger.info(f"GPU offloading enabled: {self.config.gpu_layers} layers")
                 else:
-                    model_params["n_gpu_layers"] = 0
                     logger.info("GPU not available, using CPU-only mode")
             else:
-                model_params["n_gpu_layers"] = 0
                 logger.info("Using CPU-only mode for consistent performance")
 
             # Load the model (this may take a while)
@@ -336,26 +310,6 @@ class LLMEngine:
         except Exception as e:
             logger.error(f"Failed to initialize LLM engine: {e}")
             raise
-
-    def _configure_blas(self) -> None:
-        """Configure BLAS acceleration environment variables"""
-        # Set optimal thread counts for BLAS operations
-        if self.config.blas_vendor.lower() == "openblas":
-            os.environ.setdefault("OPENBLAS_NUM_THREADS", str(self.config.threads))
-            os.environ.setdefault("GOTO_NUM_THREADS", str(self.config.threads))
-
-        elif self.config.blas_vendor.lower() == "mkl":
-            os.environ.setdefault("MKL_NUM_THREADS", str(self.config.threads))
-            os.environ.setdefault("MKL_DYNAMIC", "FALSE")
-
-        elif self.config.blas_vendor.lower() == "blis":
-            os.environ.setdefault("BLIS_NUM_THREADS", str(self.config.threads))
-
-        # Set general threading environment
-        os.environ.setdefault("OMP_NUM_THREADS", str(self.config.threads))
-        os.environ.setdefault("NUMEXPR_NUM_THREADS", str(self.config.threads))
-
-        logger.info(f"Configured {self.config.blas_vendor} with {self.config.threads} threads")
 
     def _is_ready(self) -> bool:
         """Ready if initialized with any backend (llamacpp needs self.model)."""
@@ -626,8 +580,6 @@ class LLMEngine:
                 "model_size": self.config.model_size,
                 "context_length": self.config.context_length,
                 "threads": self.config.threads,
-                "blas_enabled": self.config.enable_blas,
-                "blas_vendor": self.config.blas_vendor if self.config.enable_blas else None,
                 "model_path": model_path,
                 "file_size_bytes": file_size,
                 "file_size_gb": file_size / (1024*1024*1024) if file_size else None,

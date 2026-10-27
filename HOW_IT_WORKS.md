@@ -865,7 +865,7 @@ class PowerManager:
             return {
                 'threads': 2,  # Fewer cores
                 'batch_size': 256,  # Smaller batches
-                'enable_blas': False,  # Disable acceleration
+                'enable_gpu_offload': False,  # CPU-only to save power
                 'max_tokens': 128  # Shorter responses
             }
         else:

@@ -219,13 +219,18 @@ file ~/.pebblemind/models/*.gguf
 
 ### Slow responses
 
-Try a smaller model or adjust GPU layers:
+On Apple Silicon, Metal full offload + flash attention is already the default
+(`llm.gpu_layers: -1` = all layers). If you're CPU-only, try a smaller model:
 ```bash
-# Increase GPU offload (if you have Metal/CUDA)
-pebblemind config set llm.gpu_layers 32
-
-# Use smaller model
 pebblemind config set llm.model_size 1.5b
+```
+
+### Everything feels sluggish
+
+If Ollama is running, its loaded models share your Mac's unified memory and
+can starve the bundled llama.cpp backend. Unload what you're not using:
+```bash
+curl localhost:11434/api/generate -d '{"model":"qwen2.5:7b","keep_alive":0}'
 ```
 
 ### Still stuck?
@@ -254,7 +259,7 @@ pebblemind --help
 - 💰 **Zero Cost** - No API keys, no subscriptions
 - 🌐 **Offline** - Works without internet
 - 🔧 **Hackable** - Python codebase, easy to extend
-- 🧪 **Production-Ready** - 102 passing tests, security hardened
+- 🧪 **Production-Ready** - 105 passing tests, security hardened
 
 ## Support
 

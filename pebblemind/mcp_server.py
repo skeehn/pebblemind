@@ -12,6 +12,7 @@ Run:  pebblemind mcp serve        (or)  python -m pebblemind.mcp_server
 import asyncio
 import json
 import logging
+import os
 import sys
 from typing import Any, Dict, Optional
 
@@ -328,4 +329,12 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    # Hard-exit to avoid the ggml Metal exit-time teardown abort
+    # (GGML_ASSERT([rsets->data count] == 0) — ggml-org/llama.cpp#17869).
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
