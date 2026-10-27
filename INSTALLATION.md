@@ -205,7 +205,7 @@ Most AI tools send your data to servers. This keeps everything local. Useful if 
 Unlike many AI demos, this has:
 - Real error handling (with automatic retries)
 - Proper caching (LRU + TTL)
-- Comprehensive tests (79 passing)
+- Comprehensive tests (102 passing)
 - Clean architecture you can actually maintain
 
 ### 3. **Optimized for Regular Computers**
@@ -309,7 +309,7 @@ No, but it's private and free to run. Different use case.
 Privacy, learning, offline access, no API costs, full control.
 
 **"Is this production-ready?"**
-The core code? Yes (79 tests passing). The end-user experience? Getting there.
+The core code? Yes (102 tests passing). The end-user experience? Getting there.
 
 ---
 

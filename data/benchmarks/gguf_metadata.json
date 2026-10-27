@@ -1,0 +1,159 @@
+{
+  "generated": "2026-10-26",
+  "method": "GGUF v3 header walk (hand parser; REA rejects GGUF containers). sha256 of full file. file_type 15 == Q4_K_M per ggml GGUF spec.",
+  "related_rea_evidence": {
+    "ollama_binary": "ev_09bc76eab3ffb6492457a4e84cd9a2b8a5e8f175ff0849f8e0ca72edaf17621c",
+    "libggml_metal_strings": "ev_b95ec72641c58aac852f710443597f32dbd259661b4accdcc6668dda332c2d65"
+  },
+  "models": {
+    "qwen2.5-1.5b-instruct-q4_k_m.gguf": {
+      "gguf_version": 3,
+      "tensor_count": 339,
+      "kv_count": 26,
+      "metadata": {
+        "general.architecture": "qwen2",
+        "general.type": "model",
+        "general.name": "qwen2.5-1.5b-instruct",
+        "general.version": "v0.1",
+        "general.finetune": "qwen2.5-1.5b-instruct",
+        "general.size_label": "1.8B",
+        "qwen2.block_count": 28,
+        "qwen2.context_length": 32768,
+        "qwen2.embedding_length": 1536,
+        "qwen2.feed_forward_length": 8960,
+        "qwen2.attention.head_count": 12,
+        "qwen2.attention.head_count_kv": 2,
+        "qwen2.rope.freq_base": 1000000.0,
+        "qwen2.attention.layer_norm_rms_epsilon": 9.999999974752427e-07,
+        "general.file_type": 15,
+        "tokenizer.ggml.model": "gpt2",
+        "tokenizer.ggml.pre": "qwen2",
+        "tokenizer.ggml.tokens": {
+          "element_type": 8,
+          "count": 151936,
+          "sample": [
+            "!",
+            "\"",
+            "#",
+            "$"
+          ]
+        },
+        "tokenizer.ggml.token_type": {
+          "element_type": 5,
+          "count": 151936,
+          "sample": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "tokenizer.ggml.merges": {
+          "element_type": 8,
+          "count": 151387,
+          "sample": [
+            "\u0120 \u0120",
+            "\u0120\u0120 \u0120\u0120",
+            "i n",
+            "\u0120 t"
+          ]
+        },
+        "tokenizer.ggml.eos_token_id": 151645,
+        "tokenizer.ggml.padding_token_id": 151643,
+        "tokenizer.ggml.bos_token_id": 151643,
+        "tokenizer.ggml.add_bos_token": false,
+        "tokenizer.chat_template": "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- messages[0]['content'] }}\n    {%- else %}\n        {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}\n    {%- endif %}\n    {{- \"\\n\\n# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- '<|im_start|>system\\n' + messages[0]['content'] + '<|im_end|>\\n' }}\n    {%- else %}\n        {{- '<|im_start|>system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- for message in messages %}\n    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) or (message.role == \"assistant\" and not message.tool_calls) %}\n        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {{- '<|im_start|>' + message.role }}\n        {%- if message.content %}\n            {{- '\\n' + message.content }}\n        {%- endif %}\n        {%- for tool_call in message.tool_calls %}\n            {%- if tool_call.function is defined %}\n                {%- set tool_call = tool_call.function %}\n            {%- endif %}\n            {{- '\\n<tool_call>\\n{\"name\": \"' }}\n            {{- tool_call.name }}\n            {{- '\", \"arguments\": ' }}\n            {{- tool_call.arguments | tojson }}\n            {{- '}\\n</tool_call>' }}\n        {%- endfor %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- message.content }}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}\n",
+        "general.quantization_version": 2
+      },
+      "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+      "size_bytes": 1117320736
+    },
+    "qwen2.5-7b-instruct-q4_k_m.gguf": {
+      "gguf_version": 3,
+      "tensor_count": 339,
+      "kv_count": 38,
+      "metadata": {
+        "general.architecture": "qwen2",
+        "general.type": "model",
+        "general.name": "Qwen2.5 7B Instruct",
+        "general.finetune": "Instruct",
+        "general.basename": "Qwen2.5",
+        "general.size_label": "7B",
+        "general.license": "apache-2.0",
+        "general.license.link": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/LICENSE",
+        "general.base_model.count": 1,
+        "general.base_model.0.name": "Qwen2.5 7B",
+        "general.base_model.0.organization": "Qwen",
+        "general.base_model.0.repo_url": "https://huggingface.co/Qwen/Qwen2.5-7B",
+        "general.tags": {
+          "element_type": 8,
+          "count": 2,
+          "sample": [
+            "chat",
+            "text-generation"
+          ]
+        },
+        "general.languages": {
+          "element_type": 8,
+          "count": 1,
+          "sample": [
+            "en"
+          ]
+        },
+        "qwen2.block_count": 28,
+        "qwen2.context_length": 32768,
+        "qwen2.embedding_length": 3584,
+        "qwen2.feed_forward_length": 18944,
+        "qwen2.attention.head_count": 28,
+        "qwen2.attention.head_count_kv": 4,
+        "qwen2.rope.freq_base": 1000000.0,
+        "qwen2.attention.layer_norm_rms_epsilon": 9.999999974752427e-07,
+        "general.file_type": 15,
+        "tokenizer.ggml.model": "gpt2",
+        "tokenizer.ggml.pre": "qwen2",
+        "tokenizer.ggml.tokens": {
+          "element_type": 8,
+          "count": 152064,
+          "sample": [
+            "!",
+            "\"",
+            "#",
+            "$"
+          ]
+        },
+        "tokenizer.ggml.token_type": {
+          "element_type": 5,
+          "count": 152064,
+          "sample": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "tokenizer.ggml.merges": {
+          "element_type": 8,
+          "count": 151387,
+          "sample": [
+            "\u0120 \u0120",
+            "\u0120\u0120 \u0120\u0120",
+            "i n",
+            "\u0120 t"
+          ]
+        },
+        "tokenizer.ggml.eos_token_id": 151645,
+        "tokenizer.ggml.padding_token_id": 151643,
+        "tokenizer.ggml.bos_token_id": 151643,
+        "tokenizer.ggml.add_bos_token": false,
+        "tokenizer.chat_template": "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- messages[0]['content'] }}\n    {%- else %}\n        {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}\n    {%- endif %}\n    {{- \"\\n\\n# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- '<|im_start|>system\\n' + messages[0]['content'] + '<|im_end|>\\n' }}\n    {%- else %}\n        {{- '<|im_start|>system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- for message in messages %}\n    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) or (message.role == \"assistant\" and not message.tool_calls) %}\n        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {{- '<|im_start|>' + message.role }}\n        {%- if message.content %}\n            {{- '\\n' + message.content }}\n        {%- endif %}\n        {%- for tool_call in message.tool_calls %}\n            {%- if tool_call.function is defined %}\n                {%- set tool_call = tool_call.function %}\n            {%- endif %}\n            {{- '\\n<tool_call>\\n{\"name\": \"' }}\n            {{- tool_call.name }}\n            {{- '\", \"arguments\": ' }}\n            {{- tool_call.arguments | tojson }}\n            {{- '}\\n</tool_call>' }}\n        {%- endfor %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- message.content }}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}\n",
+        "general.quantization_version": 2,
+        "quantize.imatrix.file": "/models_out/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct.imatrix",
+        "quantize.imatrix.dataset": "/training_dir/calibration_datav3.txt",
+        "quantize.imatrix.entries_count": 196,
+        "quantize.imatrix.chunks_count": 128
+      },
+      "sha256": "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423",
+      "size_bytes": 4683074240
+    }
+  }
+}

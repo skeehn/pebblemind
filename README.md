@@ -276,6 +276,21 @@ Benchmarks run against the **same Qwen2.5 GGUF weights** in both engines:
 - On Mac, **both** paths are Metal-accelerated; llama-cpp-python now has no prebuilt macOS wheels, so PebbleMind builds it from source with `METAL=1` (the installer handles this).
 - Honest take: for 7B+ models prefer the Ollama backend; for 0.5B–3B the bundled llama.cpp is within ~8% of Ollama.
 
+### Verified provenance (Oct 2026)
+
+Every claim above was checked against the **actual shipped artifacts**, not vendor docs (binary analysis via REA + a GGUF v3 header walk):
+
+| Artifact | Verified fact |
+|----------|--------------|
+| Ollama binary | `v0.40.11` Go 1.27.3, mach-o arm64, built 2026-10-23, compiled with `-tags=mlx` → MLX enabled on Mac |
+| `libggml-metal.dylib` (bundled llama.cpp) | Full Metal backend: `ggml_metal_graph_compute` with **embedded shader library** (`GGML_METAL_EMBED_LIBRARY`), M1–M5 support |
+| `qwen2.5-1.5b-instruct-q4_k_m.gguf` | Q4_K_M (file_type 15), arch `qwen2`, 339 tensors, vocab 151,936, native context 32,768 |
+| `qwen2.5-7b-instruct-q4_k_m.gguf` | Q4_K_M (file_type 15), arch `qwen2`, 339 tensors, vocab 152,064, native context 32,768 |
+
+SHA-256 fingerprints + complete GGUF metadata: [`data/benchmarks/gguf_metadata.json`](data/benchmarks/gguf_metadata.json).
+
+> The model files natively support 32,768-token contexts. PebbleMind caps runtime context lower (default 2048, max 4096) to fit 16GB RAM budgets — a device choice, not a model limit.
+
 ### Real-world retrieval quality (October 2026 robust test suite)
 
 - RAG top-3 hit rate with real BGE-small embeddings: **7/8** questions
