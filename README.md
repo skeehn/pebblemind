@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/skeehn/pebblemind/actions/workflows/ci.yml/badge.svg)](https://github.com/skeehn/pebblemind/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-142%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-104%20passing-brightgreen)](tests/)
 
 **Run AI models on your own computer. No internet, no cloud, no data sharing.**
 
@@ -35,13 +35,15 @@ Great for understanding how AI systems actually work, since you can see everythi
 
 ## Current Status
 
-✅ **Core Engine**: Fully working with 79/79 tests passing
+✅ **Core Engine**: Fully working with 104 tests passing (incl. 14 robust end-to-end tests + 2 real-document RAG tests)
 ✅ **Caching**: Production-ready LRU cache
 ✅ **Error Handling**: Automatic retries with exponential backoff
 ✅ **RAG System**: Vector search for documents
 ✅ **Plugin System**: Extensible architecture
-⚠️ **Installation**: Requires some setup (downloading models, installing deps)
-🚧 **CLI**: Being improved for easier use
+✅ **MCP**: Expose PebbleMind over Model Context Protocol (`pebblemind mcp serve`) + call external MCP servers
+✅ **Web Access**: Optional `web_search` / `web_fetch` tools (httpx, no API keys)
+✅ **Multi-backend**: Ollama, llama.cpp (Metal), HuggingFace — auto-selected per machine
+🚧 **Desktop App**: Tauri template exists, needs polish
 
 ## Quick Start
 
@@ -54,7 +56,7 @@ cd pebblemind
 # Install test dependencies
 pip install pytest pytest-asyncio pydantic numpy scipy
 
-# Run tests (should see 142 passing)
+# Run tests (should see 104 passing (+1 conditional skip))
 python -m pytest tests/ -v
 ```
 
@@ -175,6 +177,44 @@ pebblemind models install qwen2.5-7b-q4
 
 Full guide: [QUICKSTART.md](QUICKSTART.md)
 
+## 🔌 MCP (Model Context Protocol)
+
+PebbleMind speaks MCP both ways — the standard protocol for connecting AI assistants to tools in 2026 (Claude Desktop, Cursor, editors, agents):
+
+**Serve PebbleMind over MCP** (any MCP client can use your local model):
+
+```bash
+pebblemind mcp serve
+```
+
+Exposed tools: `chat`, `ask_documents`, `add_documents`, `get_status` + the `pebblemind://status` resource. Example Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "pebblemind": {"command": "pebblemind", "args": ["mcp", "serve"]}
+  }
+}
+```
+
+**Use external MCP servers** — add them to `pebblemind.yaml` and their tools become available to your local model automatically:
+
+```yaml
+mcp:
+  servers:
+    filesystem:
+      command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    websearch:
+      url: "http://localhost:8080/mcp"
+
+tools:
+  web_access: true   # built-in web_search / web_fetch (httpx, no API keys)
+```
+
+```bash
+pebblemind mcp list   # inspect tools of configured servers
+```
+
 ## 📦 Model Management
 
 PebbleMind includes a built-in model catalog with one-command downloads:
@@ -208,48 +248,75 @@ All models are quantized (Q4) for optimal size/quality balance.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| LLM Inference | ✅ Working | llama.cpp, 1.5B/3B/7B models |
-| Caching | ✅ Working | LRU + TTL, thoroughly tested |
+| LLM Inference | ✅ Working | Ollama / llama.cpp(Metal) / HuggingFace backends |
+| Caching | ✅ Working | LRU + TTL, concurrency-tested |
 | Error Handling | ✅ Working | Retry with backoff |
-| RAG/Vector Search | ✅ Working | BGE embeddings, SQLite-vec |
+| RAG/Vector Search | ✅ Working | BGE embeddings, SQLite-vec, hash fallback |
 | Plugin System | ✅ Working | Dynamic loading, hooks |
-| Tests | ✅ 142 passing | Comprehensive coverage |
+| MCP Server | ✅ Working | `pebblemind mcp serve` (stdio JSON-RPC) |
+| MCP Client | ✅ Working | Call external MCP servers, tools auto-registered |
+| Web Access | ✅ Working | Opt-in web_search / web_fetch |
+| Tests | ✅ 104 passing | + 14 robust tests + 2 real-doc RAG tests (Oct 2026) |
 | Voice I/O | 🚧 Partial | Framework there, needs polish |
-| Web API | 🚧 Partial | FastAPI server implemented |
-| CLI | 🚧 In Progress | Python API works great |
+| CLI | ✅ Working | chat, doctor, models, mcp, config, serve |
 | Desktop App | 🚧 Planned | Tauri template exists |
 
-## Performance
+## Performance (October 2026, Apple M3 8-core, 16GB RAM, measured)
 
-Realistic numbers from testing:
+Benchmarks run against the **same Qwen2.5 GGUF weights** in both engines:
 
-**MacBook Air M1 (8GB RAM)**
-- 1.5B model: 15-25 tokens/sec
-- Memory: ~2GB
-- Startup: 3-5 seconds
+| Path | tok/s | Notes |
+|------|-------|-------|
+| Raw Ollama 0.40 (qwen2.5:1.5b) | 65.8 | engine-level reference |
+| PebbleMind llama.cpp 1.5B — **Metal full offload + flash-attn (the default on Mac now)** | 63.9 | 97% of Ollama, zero config |
+| PebbleMind llama.cpp 1.5B CPU-only | 47.1 | no Metal needed; 2× the pre-2026-10-26 default |
+| Ollama qwen3:4b (Thinking 2507) | 29.7 | other model family tested |
+| PebbleMind llama.cpp qwen3:4B — same GGUF, Metal + flash-attn | 26.6 | cross-source GGUF loading |
+| Ollama qwen2.5:7b | 16.1 | 16GB-class reference |
 
-**Desktop (Ryzen/i7, 16GB RAM)**
-- 3B model: 40-60 tokens/sec
-- Memory: ~4GB
-- Startup: 4-6 seconds
+- Measured with token-accurate counts (`scripts/bench_speed.py`), 96-token generations, temperature 0; Ollama numbers from its own `eval_count`/`eval_duration`.
+- On Mac, the llama.cpp backend now defaults to **Metal full offload + flash attention** — speed went from 23.8 to 63.9 tok/s out of the box (2.7×). `gpu_layers: -1` offloads all layers; ≤7B Q4_K_M fits 16GB unified memory easily.
 
-**Comparison to Cloud APIs:**
-- Speed: Slower (cloud is 100+ tokens/sec)
-- Privacy: Much better (stays local)
-- Cost: Free after setup vs $$ per month
-- Offline: Works vs requires internet
+### Verified provenance (Oct 2026)
+
+Every claim above was checked against the **actual shipped artifacts**, not vendor docs (binary analysis via REA + a GGUF v3 header walk):
+
+| Artifact | Verified fact |
+|----------|--------------|
+| Ollama binary | `v0.40.11` Go 1.27.3, mach-o arm64, built 2026-10-23, compiled with `-tags=mlx` → MLX enabled on Mac |
+| `libggml-metal.dylib` (bundled llama.cpp) | Full Metal backend: `ggml_metal_graph_compute` with **embedded shader library** (`GGML_METAL_EMBED_LIBRARY`), M1–M5 support |
+| `libllama.dylib` (bundled llama.cpp) | Flash attention (`llama_flash_attn_type_name`) + `llama_supports_gpu_offload` symbols; very recent llama.cpp (Llama 5 / Gemma 4 / Phi 3.5 / DeepSeek-V4 attention ops) — via REA objdump |
+| `qwen2.5-1.5b-instruct-q4_k_m.gguf` | Q4_K_M (file_type 15), arch `qwen2`, 339 tensors, vocab 151,936, native context 32,768 |
+| `qwen2.5-7b-instruct-q4_k_m.gguf` | Q4_K_M (file_type 15), arch `qwen2`, 339 tensors, vocab 152,064, native context 32,768 |
+| `qwen3:4b` (Ollama blob) | Q4_K_M, arch `qwen3` "Qwen3 4B Thinking 2507", 36 layers, native context **262,144**, Apache-2.0 |
+
+SHA-256 fingerprints + complete GGUF metadata: [`data/benchmarks/gguf_metadata.json`](data/benchmarks/gguf_metadata.json).
+
+> The model files natively support 32,768-token contexts. PebbleMind caps runtime context lower (default 2048, max 4096) to fit 16GB RAM budgets — a device choice, not a model limit.
+
+### Real-world retrieval quality (October 2026 robust test suite)
+
+- RAG top-3 hit rate with real BGE-small embeddings: **7/8** questions (synthetic + real RFC/NASA docs)
+- Big-document stress (55K-word Art of War, adversarial commentary-heavy corpus): sentence-aware
+  chunking + hybrid vector/keyword scoring lifted top-3 retrieval 1/4 → **2/4**; ingest **8.15s → 3.77s**
+  via Apple MPS embeddings (bit-identical rankings). Paraphrase questions on commentary-heavy
+  classical text remain the known limit of a 27M-param embedder (`data/benchmarks/t7_bigdoc.json`).
+- Concurrent safety: 6 parallel generations on one engine — queued, correct, no corruption
+- MCP round-trip: chat + document Q&A over the protocol with the real model
 
 ## Architecture
 
 ```
 PebbleMind/
-├── core/llm.py          # LLM engine (llama.cpp integration)
+├── core/llm.py          # LLM engine (multi-backend)
+├── core/backends.py     # Ollama/llama.cpp/HF transports + model catalog
 ├── rag/system.py        # Vector search for documents
 ├── cache/               # Response caching
-├── utils/error_handler  # Retry logic
-├── plugins/             # Plugin system
+├── mcp_server.py        # MCP server (expose PebbleMind over MCP)
+├── mcp_client.py        # MCP client (call external MCP servers)
+├── web_tools.py         # web_search / web_fetch (opt-in)
 ├── api/server.py        # REST API (OpenAI-compatible)
-└── tests/               # 142 comprehensive tests
+└── tests/               # 104 comprehensive tests
 ```
 
 **Key Technologies:**
@@ -263,7 +330,7 @@ PebbleMind/
 
 | Metric | Value |
 |--------|-------|
-| Tests | 142 passing |
+| Tests | 104 passing |
 | Test Coverage | ~75% (core: 100%) |
 | Type Hints | Yes, throughout |
 | Documentation | Comprehensive |

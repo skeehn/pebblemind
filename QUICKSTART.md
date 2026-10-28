@@ -82,7 +82,7 @@ pebblemind config set llm.model_path ~/.pebblemind/models/qwen2.5-7b-q4.gguf
 
 ```bash
 # Add a single document
-pebblemind add-docs ~/Documents/report.pdf
+pebblemind add-docs ~/Documents/report.txt
 
 # Add multiple files
 pebblemind add-docs ~/Documents/*.txt
@@ -96,7 +96,50 @@ pebblemind stats
 
 Then ask questions about your documents:
 ```bash
+# Retrieval-augmented answer (grounded in your docs)
 pebblemind chat "What does the Q3 report say about revenue?"
+
+# Or use the dedicated RAG command:
+pebblemind ask-docs "What does the Q3 report say about revenue?"
+
+# Passages only (no LLM answer — fastest)
+pebblemind ask-docs "revenue guidance" --no-answer
+```
+
+## MCP: Connect to Claude Desktop & Other Agents
+
+PebbleMind speaks the Model Context Protocol — the standard way AI assistants
+connect to tools in 2026.
+
+**Use PebbleMind from Claude Desktop / Cursor / any MCP client.** Add to your
+Claude Desktop config (`Settings → Developer → Edit Config`):
+
+```json
+{
+  "mcpServers": {
+    "pebblemind": {"command": "pebblemind", "args": ["mcp", "serve"]}
+  }
+}
+```
+
+Now Claude can use your local model via the `chat`, `ask_documents`,
+`add_documents` and `get_status` tools — your documents never leave the machine.
+
+**Give PebbleMind new tools from MCP servers.** Add to `pebblemind.yaml`:
+
+```yaml
+mcp:
+  servers:
+    filesystem:
+      command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+
+tools:
+  web_access: true   # built-in web_search / web_fetch
+```
+
+```bash
+# Verify what tools your model can call:
+pebblemind mcp list
 ```
 
 ## Voice Commands
@@ -176,13 +219,18 @@ file ~/.pebblemind/models/*.gguf
 
 ### Slow responses
 
-Try a smaller model or adjust GPU layers:
+On Apple Silicon, Metal full offload + flash attention is already the default
+(`llm.gpu_layers: -1` = all layers). If you're CPU-only, try a smaller model:
 ```bash
-# Increase GPU offload (if you have Metal/CUDA)
-pebblemind config set llm.gpu_layers 32
-
-# Use smaller model
 pebblemind config set llm.model_size 1.5b
+```
+
+### Everything feels sluggish
+
+If Ollama is running, its loaded models share your Mac's unified memory and
+can starve the bundled llama.cpp backend. Unload what you're not using:
+```bash
+curl localhost:11434/api/generate -d '{"model":"qwen2.5:7b","keep_alive":0}'
 ```
 
 ### Still stuck?
@@ -211,7 +259,7 @@ pebblemind --help
 - 💰 **Zero Cost** - No API keys, no subscriptions
 - 🌐 **Offline** - Works without internet
 - 🔧 **Hackable** - Python codebase, easy to extend
-- 🧪 **Production-Ready** - 142 passing tests, security hardened
+- 🧪 **Production-Ready** - 104 passing tests, security hardened
 
 ## Support
 

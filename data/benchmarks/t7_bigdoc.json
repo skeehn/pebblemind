@@ -1,0 +1,43 @@
+{
+  "doc": "art_of_war (Gutenberg pg132, Giles translation)",
+  "words": 55130,
+  "ingest_s": 3.77,
+  "chunks": 438,
+  "chunking": "sentence-aware 160w/32w carry",
+  "scoring": "hybrid vec+keyword(0.3)",
+  "embedding_device": "mps",
+  "details": [
+    {
+      "q": "What is the greatest victory according to Sun Tzu?",
+      "latency_ms": 174,
+      "top1_hit": false,
+      "top3_hit": false,
+      "top_snippet": "with the total defeat of Wu by Kou Chien and its incorporation in Y\u00fceh. This was doubtless long afte"
+    },
+    {
+      "q": "What does Sun Tzu say about knowing the enemy and yourself?",
+      "latency_ms": 134,
+      "top1_hit": false,
+      "top3_hit": false,
+      "top_snippet": "By means of every artful contrivance, cause deterioration amongst his men and waste of his treasure."
+    },
+    {
+      "q": "What are the five factors that govern war?",
+      "latency_ms": 129,
+      "top1_hit": true,
+      "top3_hit": true,
+      "top_snippet": "Sun Tz\u016d said: The art of war is of vital importance to the State. 2. It is a matter of life and deat"
+    },
+    {
+      "q": "How should one treat captives gained in battle?",
+      "latency_ms": 13,
+      "top1_hit": false,
+      "top3_hit": true,
+      "top_snippet": "3: \"The nominal strength of mercenary troops may be 100,000, but their real value will be not more t"
+    }
+  ],
+  "top1_hits": 1,
+  "top3_hits": 2,
+  "total": 4,
+  "notes": "Paraphrase questions on a 55K-word commentary-heavy classical text stress a 27M-param embedder: greatest-victory/hundred-battles verses stay outside top-3 (vec rank ~30-60 of 438). Phrase integrity fixed (verses no longer split across chunks) and hybrid scoring lifted top3 1/4 -> 2/4 vs the stride chunker. Small docs (real use) are unaffected."
+}

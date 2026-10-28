@@ -17,7 +17,7 @@ MAC_SMALL_MODELS = {
     "smollm2-135m": {
         "ollama": "smollm2:135m",
         "hf": "HuggingFaceTB/SmolLM2-135M-Instruct",
-        "gguf_url": "https://huggingface.co/HuggingFaceTB/smollm2-135m-instruct-gguf/resolve/main/smollm2-135m-instruct-q4_k_m.gguf",
+        "gguf_url": "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf",
         "size_gb": 0.2,
         "ram_gb": 2,
     },
@@ -31,7 +31,7 @@ MAC_SMALL_MODELS = {
     "qwen3-0.6b": {
         "ollama": "qwen3:0.6b",
         "hf": "Qwen/Qwen3-0.6B",
-        "gguf_url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
+        "gguf_url": "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
         "size_gb": 0.5,
         "ram_gb": 2,
     },
@@ -59,7 +59,7 @@ MAC_SMALL_MODELS = {
     "qwen3-1.7b": {
         "ollama": "qwen3:1.7b",
         "hf": "Qwen/Qwen3-1.7B",
-        "gguf_url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
+        "gguf_url": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
         "size_gb": 1.2,
         "ram_gb": 4,
     },
@@ -103,7 +103,7 @@ MAC_SMALL_MODELS = {
     "qwen2.5-7b": {
         "ollama": "qwen2.5:7b",
         "hf": "Qwen/Qwen2.5-7B-Instruct",
-        "gguf_url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
+        "gguf_url": "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
         "size_gb": 4.4,
         "ram_gb": 16,
     },
@@ -163,13 +163,24 @@ def ollama_chat(
     options: Optional[Dict[str, Any]] = None,
     timeout: float = 120.0,
 ) -> str:
-    """Non-streaming chat via Ollama /api/chat. Raises on error."""
+    """Non-streaming chat via Ollama /api/chat; retries transient network
+    errors with backoff. Raises on error."""
+    import time as _time
+
     import httpx
 
     payload: Dict[str, Any] = {"model": model, "messages": messages, "stream": False}
     if options:
         payload["options"] = options
-    r = httpx.post(f"{host.rstrip('/')}/api/chat", json=payload, timeout=timeout)
+    for attempt in range(3):
+        try:
+            r = httpx.post(f"{host.rstrip('/')}/api/chat", json=payload, timeout=timeout)
+            break
+        except httpx.TransportError as e:
+            if attempt == 2:
+                raise
+            logger.warning("Ollama chat transient error (%s), retrying", e)
+            _time.sleep(0.5 * (attempt + 1))
     r.raise_for_status()
     data = r.json()
     msg = data.get("message", {})

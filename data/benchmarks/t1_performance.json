@@ -1,0 +1,42 @@
+{
+  "when": "2026-10-27 21:25:07",
+  "rss_start_mb": 4172.375,
+  "results": [
+    {
+      "label": "1.5B-cpu",
+      "backend": "llamacpp",
+      "init_s": 0.475,
+      "ttft_s": 0.239,
+      "tokens": 23,
+      "gen_s": 0.585,
+      "tokens_per_s": 39.33,
+      "rss_mb": 4608.8
+    },
+    {
+      "label": "1.5B-metal-full",
+      "backend": "llamacpp",
+      "init_s": 0.172,
+      "ttft_s": 0.101,
+      "tokens": 14,
+      "gen_s": 0.295,
+      "tokens_per_s": 47.49,
+      "rss_mb": 4608.8
+    },
+    {
+      "label": "7B-metal-full",
+      "backend": "llamacpp",
+      "init_s": 5.564,
+      "ttft_s": 0.753,
+      "tokens": 10,
+      "gen_s": 1.328,
+      "tokens_per_s": 7.53,
+      "rss_mb": 6040.1
+    },
+    {
+      "label": "cache-check",
+      "cold_s": 0.282,
+      "warm_s": 0.169,
+      "speedup": 1.67
+    }
+  ]
+}

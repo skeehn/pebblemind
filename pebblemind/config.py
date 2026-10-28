@@ -1,6 +1,7 @@
 """Configuration management for PebbleMind"""
 
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 import yaml
@@ -23,12 +24,9 @@ class LLMConfig(BaseModel):
     top_p: float = Field(default=0.9, description="Top-p sampling parameter")
     top_k: int = Field(default=40, description="Top-k sampling parameter")
     threads: int = Field(default=-1, description="Number of threads (-1 for auto, conservative for lightweight devices)")
-    batch_size: int = Field(default=256, description="Batch size for processing (reduced for memory efficiency)")
-    enable_blas: bool = Field(default=True, description="Enable BLAS acceleration")
-    blas_vendor: str = Field(default="OpenBLAS", description="BLAS vendor to use")
-    enable_native: bool = Field(default=True, description="Enable native optimizations")
-    enable_gpu_offload: bool = Field(default=False, description="Enable GPU layer offloading (CPU-only by default for consistency)")
-    gpu_layers: int = Field(default=0, description="Number of layers to offload to GPU (-1 for auto)")
+    batch_size: int = Field(default=512, description="Prompt-processing batch size (n_batch/n_ubatch)")
+    enable_gpu_offload: bool = Field(default_factory=lambda: sys.platform == "darwin", description="Offload layers to GPU (default on for Metal on macOS)")
+    gpu_layers: int = Field(default=-1, description="Layers to offload (-1 = all layers)")
     auto_detect_gpu: bool = Field(default=True, description="Automatically detect and configure GPU")
 
 
@@ -50,8 +48,8 @@ class RAGConfig(BaseModel):
     ollama_embed_model: str = Field(default="nomic-embed-text", description="Ollama embedding model")
     embedding_dim: int = Field(default=384, description="Embedding dimension")
     vector_db_path: str = Field(default="./data/vectors.db", description="Vector database path")
-    chunk_size: int = Field(default=512, description="Document chunk size")
-    chunk_overlap: int = Field(default=32, description="Overlap between chunks (reduced for efficiency)")
+    chunk_size: int = Field(default=160, description="Document chunk size in words (~200 tokens)")
+    chunk_overlap: int = Field(default=32, description="Word overlap between chunks")
     max_results: int = Field(default=3, description="Maximum search results (reduced for efficiency)")
     similarity_threshold: float = Field(default=0.7, description="Similarity threshold")
 
@@ -81,6 +79,23 @@ class DesktopConfig(BaseModel):
     start_minimized: bool = Field(default=False, description="Start minimized")
 
 
+class ToolsConfig(BaseModel):
+    """Configuration for built-in tools (web access is opt-in for privacy)."""
+    web_access: bool = Field(default=False, description="Enable web_search/web_fetch tools (requires internet)")
+
+
+class MCPConfig(BaseModel):
+    """Configuration for Model Context Protocol servers.
+
+    Each entry maps a name to a server spec: either {"command": [exe, args...]}
+    for stdio servers or {"url": "http://..."} for HTTP endpoints.
+    """
+    servers: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="MCP servers, e.g. {'filesystem': {'command': ['npx', '-y', '@modelcontextprotocol/server-filesystem', '/tmp']}}",
+    )
+
+
 class Config(BaseModel):
     """Main configuration class"""
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -88,6 +103,8 @@ class Config(BaseModel):
     rag: RAGConfig = Field(default_factory=RAGConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     desktop: DesktopConfig = Field(default_factory=DesktopConfig)
+    tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
 
     data_dir: str = Field(default="./data", description="Data directory")
     cache_dir: str = Field(default="./cache", description="Cache directory")
@@ -149,11 +166,22 @@ def set_config(config: Config) -> None:
 
 
 def load_config(config_path: Optional[str] = None) -> Config:
-    """Load configuration from file or create default"""
+    """Load configuration from file, the published global config, or defaults.
+
+    Precedence: explicit path > already-published global config (so
+    CLI-parsed overrides like --backend / --ollama-model survive the
+    command calling quick_start()) > $PEBBLEMIND_CONFIG env var > defaults.
+    """
+    global _config
     if config_path and Path(config_path).exists():
         config = Config.from_file(config_path)
+    elif _config is not None:
+        # Published config wins over the env var: it already carries any
+        # CLI overrides layered on top of that same file this process.
+        return _config
     else:
-        config = Config()
+        env_path = os.environ.get("PEBBLEMIND_CONFIG")
+        config = Config.from_file(env_path) if env_path and Path(env_path).exists() else Config()
 
     set_config(config)
     return config

@@ -1,0 +1,70 @@
+{
+  "embedding": "SentenceTransformer",
+  "top1_hits": 6,
+  "retrieved": 6,
+  "total": 6,
+  "details": [
+    {
+      "q": "What HTTP error code should a teapot return when someone tries to brew coffee with it?",
+      "got_sources": [
+        "rfc2324"
+      ],
+      "top1_hit": true,
+      "retrieved": true
+    },
+    {
+      "q": "Which HTTP method did HTCPCP add for brewing coffee?",
+      "got_sources": [
+        "rfc2324"
+      ],
+      "top1_hit": true,
+      "retrieved": true
+    },
+    {
+      "q": "What options does HTCPCP define for decaffeinated coffee?",
+      "got_sources": [
+        "rfc2324"
+      ],
+      "top1_hit": true,
+      "retrieved": true
+    },
+    {
+      "q": "When did Apollo 11 land on the Moon?",
+      "got_sources": [
+        "apollo11"
+      ],
+      "top1_hit": true,
+      "retrieved": true
+    },
+    {
+      "q": "Who was the Command Module Pilot of Apollo 11?",
+      "got_sources": [
+        "apollo11"
+      ],
+      "top1_hit": true,
+      "retrieved": true
+    },
+    {
+      "q": "Where did Apollo 11 splash down?",
+      "got_sources": [
+        "apollo11"
+      ],
+      "top1_hit": true,
+      "retrieved": true
+    }
+  ],
+  "grounded_answers": [
+    {
+      "q": "What HTTP error code should a teapot return when someone tries to brew coffee with it?",
+      "answer": "HTTP error code 418 I'm a teapot.",
+      "marker": "418",
+      "ok": true
+    },
+    {
+      "q": "Who was the Command Module Pilot of Apollo 11?",
+      "answer": "Michael Collins was the Command Module Pilot of Apollo 11.",
+      "marker": "Collins",
+      "ok": true
+    }
+  ]
+}

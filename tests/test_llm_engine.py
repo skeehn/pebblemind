@@ -23,12 +23,9 @@ def llm_config():
         top_k=40,
         threads=4,
         batch_size=512,
-        enable_blas=True,
-        blas_vendor="OpenBLAS",
         enable_gpu_offload=False,
         gpu_layers=0,
-        auto_detect_gpu=False,
-        enable_native=False
+        auto_detect_gpu=False
     )
 
 
@@ -240,9 +237,9 @@ class TestLLMEngine:
                     "Focus on being helpful while maintaining efficiency."
                 ),
             },
+            {"role": "system", "content": "Context: Context 1"},
             {"role": "system", "content": "Context: Context 2"},
             {"role": "system", "content": "Context: Context 3"},
-            {"role": "system", "content": "Context: Context 4"},
             {"role": "user", "content": "Test message"},
         ]
 
@@ -297,7 +294,7 @@ class TestLLMEngine:
 
         assert info["status"] == "loaded"
         assert info["model_size"] == "1.5b"
-        assert info["blas_enabled"] is True
+        assert info["gpu_offload_enabled"] is False
         assert "file_size_gb" in info
 
     @pytest.mark.asyncio

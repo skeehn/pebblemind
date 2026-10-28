@@ -937,7 +937,6 @@ class TestPebbleMindQueryIntegration:
             "soundfile": make_module("soundfile"),
             "psutil": make_module("psutil", Process=object),
             "aiohttp": make_module("aiohttp", ClientSession=object, ClientTimeout=object),
-            "pebblemind.efficient_reasoning": make_module("pebblemind.efficient_reasoning", EfficientReasoningEngine=object),
             "pebblemind.voice": make_module("pebblemind.voice", VoiceProcessor=object),
             "pebblemind.rag": make_module("pebblemind.rag", RAGSystem=object),
             "pebblemind.api": make_module("pebblemind.api", APIServer=object),
@@ -945,10 +944,6 @@ class TestPebbleMindQueryIntegration:
             "pebblemind.reasoning_enhancer": make_module("pebblemind.reasoning_enhancer", ReasoningEnhancer=object),
             "pebblemind.advanced_memory": make_module("pebblemind.advanced_memory", EnhancedMemoryManager=object),
             "pebblemind.tool_integration": make_module("pebblemind.tool_integration", ToolManager=object, FunctionCallingManager=object),
-            "pebblemind.specialized_agents": make_module("pebblemind.specialized_agents", AgentOrchestrator=object),
-            "pebblemind.multimodal": make_module("pebblemind.multimodal", MultiModalManager=object),
-            "pebblemind.external_services": make_module("pebblemind.external_services", ServiceIntegrationManager=object),
-            "pebblemind.system_improvements": make_module("pebblemind.system_improvements", SystemImprovementManager=object, ComponentOrchestrator=object),
             "pebblemind.software_30": make_module("pebblemind.software_30", SelfImprovementManager=object),
         }
 

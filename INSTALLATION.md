@@ -37,7 +37,7 @@ pip install pytest pytest-asyncio pydantic pyyaml click rich numpy scipy
 # 3. Run tests to verify everything works
 python -m pytest tests/ -v
 
-# You should see: 79 passed in ~5 seconds ✅
+# You should see: 104 passed (+1 conditional skip) in ~1 minute ✅
 ```
 
 This verifies the code works, but won't actually run AI models yet.
@@ -205,7 +205,7 @@ Most AI tools send your data to servers. This keeps everything local. Useful if 
 Unlike many AI demos, this has:
 - Real error handling (with automatic retries)
 - Proper caching (LRU + TTL)
-- Comprehensive tests (79 passing)
+- Comprehensive tests (104 passing)
 - Clean architecture you can actually maintain
 
 ### 3. **Optimized for Regular Computers**
@@ -309,7 +309,7 @@ No, but it's private and free to run. Different use case.
 Privacy, learning, offline access, no API costs, full control.
 
 **"Is this production-ready?"**
-The core code? Yes (79 tests passing). The end-user experience? Getting there.
+The core code? Yes (104 tests passing). The end-user experience? Getting there.
 
 ---
 

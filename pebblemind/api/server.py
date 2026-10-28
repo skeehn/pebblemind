@@ -213,7 +213,7 @@ class APIServer:
         prepared = prepare_inputs(
             message,
             use_rag=True,
-            enhance_reasoning=True,
+            enhance_reasoning=False,
             reasoning_type="analytical",
             use_memory=True,
         )
@@ -789,6 +789,13 @@ def main() -> None:
         asyncio.run(server.start())
     except KeyboardInterrupt:
         logger.info("API server stopped")
+    # Hard-exit to avoid the ggml Metal exit-time teardown abort
+    # (GGML_ASSERT([rsets->data count] == 0) — ggml-org/llama.cpp#17869).
+    import os
+    import sys
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":

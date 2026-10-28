@@ -6,16 +6,12 @@ import time
 from importlib import import_module
 from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 
-from .config import Config, get_config
+from .config import Config, get_config, load_config
 from .core.llm import LLMEngine
 from .performance_monitor import PerformanceMonitor
 from .reasoning_enhancer import ReasoningEnhancer
 from .advanced_memory import EnhancedMemoryManager
 from .tool_integration import ToolManager, FunctionCallingManager
-from .specialized_agents import AgentOrchestrator
-from .multimodal import MultiModalManager
-from .external_services import ServiceIntegrationManager
-from .system_improvements import SystemImprovementManager, ComponentOrchestrator
 from .software_30 import SelfImprovementManager
 
 if TYPE_CHECKING:
@@ -144,22 +140,15 @@ class PebbleMind:
         # Tool integration
         self.tool_manager: ToolManager = ToolManager()
         self.function_calling_manager: FunctionCallingManager = FunctionCallingManager(self.tool_manager)
-        
-        # Specialized agents
-        self.agent_orchestrator: AgentOrchestrator = AgentOrchestrator()
-        
-        # Multi-modal capabilities
-        self.multimodal_manager: MultiModalManager = MultiModalManager()
-        
-        # External services integration
-        self.service_integration_manager: ServiceIntegrationManager = ServiceIntegrationManager()
-        
-        # System improvements
-        self.system_improvement_manager: SystemImprovementManager = SystemImprovementManager()
-        self.coordinator: ComponentOrchestrator = ComponentOrchestrator()
-        
+
         # Software 3.0 - Self-improving capabilities
         self.self_improvement_manager: SelfImprovementManager = SelfImprovementManager()
+
+        # Response cache: serves identical side-effect-free queries instantly
+        from .cache.response_cache import ResponseCache
+        self.response_cache: ResponseCache = ResponseCache(max_size=256, max_memory_mb=64)
+        # MCP client manager (created in initialize() only when servers are configured)
+        self.mcp: Optional["MCPClientManager"] = None
 
         # Component status
         self._initialized = False
@@ -207,6 +196,10 @@ class PebbleMind:
             )
 
             # Initialize RAG system with efficiency considerations
+            # Rebase the default vector DB path onto the configured data dir
+            # so data_dir=/tmp/x doesn't scatter vectors.db into the CWD.
+            if self.config.rag.vector_db_path == "./data/vectors.db":
+                self.config.rag.vector_db_path = str(self.config.data_path / "vectors.db")
             self.rag_system = await self._create_optional_component(
                 ".rag",
                 "RAGSystem",
@@ -224,12 +217,51 @@ class PebbleMind:
                 component_label="API server",
             )
 
+            # Register built-in tools (web access is opt-in) — non-fatal.
+            try:
+                self.tool_manager = getattr(self, "tool_manager", None)
+                if self.tool_manager is None:
+                    from .tool_integration import ToolManager
+                    self.tool_manager = ToolManager()
+                from .web_tools import register_web_tools
+                await register_web_tools(self.tool_manager, self.config.tools)
+            except Exception as exc:
+                logger.warning("Tool registration skipped: %s", exc)
+
+            # Connect configured MCP servers and expose their tools to the
+            # assistant's tool loop — non-fatal: MCP being down must not stop
+            # local chat from working.
+            try:
+                from .mcp_client import MCPClientManager
+                mcp_cfg = getattr(self.config, "mcp", None)
+                servers = getattr(mcp_cfg, "servers", {}) if mcp_cfg else {}
+                if servers:
+                    self.mcp = MCPClientManager.from_config(servers)
+                    await self.mcp.start()
+                    for server_name, tools in self.mcp.all_tools().items():
+                        for tool in tools:
+                            t_name = f"mcp_{server_name}_{tool.get('name', '')}"
+                            t_desc = tool.get("description", "")
+                            self._register_mcp_tool(server_name, tool.get("name", ""), t_name, t_desc)
+                    logger.info("MCP servers connected: %s", list(self.mcp.sessions))
+            except Exception as exc:
+                logger.warning("MCP servers unavailable: %s", exc)
+
             self._initialized = True
             logger.info("PebbleMind initialized successfully with lightweight optimizations")
+            if self.response_cache:
+                await self.response_cache.start()
 
         except Exception as e:
             logger.error(f"Failed to initialize PebbleMind: {e}")
             raise
+
+    def _register_mcp_tool(self, server: str, tool: str, exposed_name: str, description: str = "") -> None:
+        """Expose one external MCP server tool through the local ToolManager."""
+        async def _call(**kwargs):
+            return await self.mcp.call_tool(server, tool, kwargs)
+        _call.__doc__ = description
+        self.tool_manager.register_tool(exposed_name, _call)
 
     async def _create_optional_component(
         self,
@@ -278,12 +310,24 @@ class PebbleMind:
             if self.api_server:
                 await self.api_server.stop()
 
+            # Spawned MCP servers are child processes — stop them, or they
+            # outlive the assistant. Never let MCP shutdown block the
+            # LLM/RAG/cache cleanup below.
+            if self.mcp:
+                try:
+                    await self.mcp.stop()
+                except Exception as e:
+                    logger.warning("MCP shutdown failed (continuing): %s", e)
+
             # Cleanup components
             if self.llm_engine:
                 await self.llm_engine.cleanup()
 
             if self.rag_system:
                 await self.rag_system.cleanup()
+
+            if self.response_cache:
+                await self.response_cache.stop()
 
             self._running = False
             logger.info("PebbleMind stopped successfully")
@@ -296,7 +340,7 @@ class PebbleMind:
         message: str,
         context: Optional[List[str]] = None,
         use_rag: bool = True,
-        enhance_reasoning: bool = True,
+        enhance_reasoning: bool = False,
         reasoning_type: Optional[str] = "analytical",
         use_memory: bool = True,
         use_tools: bool = True,
@@ -314,20 +358,28 @@ class PebbleMind:
         # prior context — storing it would compound context every session).
         original_message = message
         try:
+            # Response cache for side-effect-free queries (no tools, no memory):
+            # identical repeats return instantly instead of re-generating.
+            cacheable = (
+                not use_tools and not use_memory
+                and getattr(self, "response_cache", None) is not None
+            )
+            cache_key = (
+                self.response_cache._generate_key(
+                    original_message, use_rag, enhance_reasoning, reasoning_type, **kwargs
+                ) if cacheable else None
+            )
+            if cacheable:
+                cached, hit = await self.response_cache.get(cache_key)
+                if hit:
+                    return cached
+
             # Check if message contains tool calls or requires complex task execution
             if use_tools and self._contains_tool_syntax(message):
                 # Handle function calling for complex tasks
                 task_result = await self.function_calling_manager.plan_and_execute(message)
                 base_response = task_result["summary"]
-                
-                # Apply Software 3.0 optimization
-                if hasattr(self, 'self_improvement_manager'):
-                    optimized_response, opt_metadata = await self.self_improvement_manager.predict_and_optimize_response(
-                        message, base_response
-                    )
-                    response = optimized_response
-                else:
-                    response = base_response
+                response = base_response
 
                 await self.finalize_interaction(
                     original_message,
@@ -367,15 +419,11 @@ class PebbleMind:
                             else:
                                 tool_outputs.append(f"[{result['tool_name']}: Error - {result['error']}]")
                         base_response += "\n\nTools Output: " + " ".join(tool_outputs)
-                
-                # Apply Software 3.0 optimization
-                if hasattr(self, 'self_improvement_manager'):
-                    optimized_response, opt_metadata = await self.self_improvement_manager.predict_and_optimize_response(
-                        message, base_response
-                    )
-                    response = optimized_response
-                else:
-                    response = base_response
+
+                response = base_response
+
+                if cache_key:
+                    await self.response_cache.set(cache_key, response)
 
                 await self.finalize_interaction(
                     original_message,
@@ -403,7 +451,7 @@ class PebbleMind:
         self,
         message: str,
         use_rag: bool = True,
-        enhance_reasoning: bool = True,
+        enhance_reasoning: bool = False,
         reasoning_type: Optional[str] = "analytical",
         use_memory: bool = True,
     ) -> Tuple[str, List[str]]:
@@ -542,6 +590,10 @@ class PebbleMind:
 
         if self.rag_system:
             await self.rag_system.add_documents(documents)
+            # Cached answers keyed to the old corpus would go stale after an
+            # ingest; drop them so new documents are visible immediately.
+            if self.response_cache:
+                await self.response_cache.clear()
         else:
             logger.warning("RAG system not initialized, cannot add documents")
 
@@ -573,9 +625,7 @@ class PebbleMind:
 # Convenience functions
 async def create_pebblemind(config_path: Optional[str] = None) -> PebbleMind:
     """Create and initialize a PebbleMind instance"""
-    config = get_config()
-    if config_path:
-        config = Config.from_file(config_path)
+    config = load_config(config_path)
 
     pebblemind = PebbleMind(config)
     await pebblemind.initialize()
@@ -584,9 +634,7 @@ async def create_pebblemind(config_path: Optional[str] = None) -> PebbleMind:
 
 def quick_start(config_path: Optional[str] = None) -> PebbleMind:
     """Quick start PebbleMind (synchronous wrapper)"""
-    config = get_config()
-    if config_path:
-        config = Config.from_file(config_path)
+    config = load_config(config_path)
 
     pebblemind = PebbleMind(config)
 

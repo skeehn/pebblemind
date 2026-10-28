@@ -8,10 +8,11 @@ when nothing is available so PebbleMind can degrade gracefully.
 
 import asyncio
 import logging
+import math
 import re
+import threading
 from typing import Optional, List, Dict, Any
 from pathlib import Path
-import os
 import platform
 
 try:
@@ -53,12 +54,27 @@ class LLMEngine:
     def __init__(self, config: LLMConfig):
         """Initialize LLM engine with configuration"""
         self.config = config
+        if config.context_length > 4096:
+            # Hard cap for memory predictability on lightweight devices;
+            # 4096 matches the installer's default for >=12GB machines.
+            config.context_length = 4096
+            logger.warning("Context length capped to 4096 for lightweight devices")
         self.model: Optional[Llama] = None
         self._initialized = False
         self._gpu_available = False
         self._gpu_layers_available = 0
         self.backend_name: str = "unselected"
         self._hf_pipe = None
+        # llama.cpp (and HF pipelines) are NOT safe for concurrent decode on
+        # one context — overlapping llama_decode calls abort the process.
+        # Serialize local-engine generation; Ollama (separate server process)
+        # needs no lock.
+        self._engine_lock = asyncio.Lock()
+        # Threading lock owned by the worker thread around llama_decode /
+        # HF decode: a cancelled caller releases the asyncio lock, but the
+        # decode thread keeps this one until decoding finishes (overlapping
+        # llama_decode calls abort in ggml).
+        self._decode_lock = threading.Lock()
 
     def _detect_gpu_availability(self) -> bool:
         """Detect if GPU is available for offloading"""
@@ -259,63 +275,34 @@ class LLMEngine:
                 import multiprocessing
                 self.config.threads = min(6, max(2, multiprocessing.cpu_count() - 2))
                 
-            if self.config.context_length > 2048:
-                # Reduce context length for better memory efficiency on lightweight devices
-                self.config.context_length = min(self.config.context_length, 2048)
-
-            # Set BLAS optimization environment variables
-            if self.config.enable_blas:
-                self._configure_blas()
-
-            # Model loading parameters - optimized for lightweight devices
+            # Metal-first on Apple Silicon: Q4_K_M ≤7B fits unified memory
+            # (4.7GB for 7B vs ~12.7GB recommended working set on an M3).
             model_params = {
                 "model_path": model_path,
                 "n_ctx": self.config.context_length,
                 "n_threads": self.config.threads,
                 "n_batch": self.config.batch_size,
-                "verbose": False,  # Reduce logging noise
-                "n_gpu_layers": 0,  # CPU-only by default for consistent performance on all devices
-                "use_mlock": False,  # Disable mlock to reduce memory pressure on lightweight devices
-                "use_mmap": True,    # Use memory mapping for efficiency
-                "low_vram": True,    # Optimize for low VRAM (even though using CPU)
+                "n_ubatch": self.config.batch_size,
+                "verbose": False,
+                "use_mmap": True,
+                "n_gpu_layers": 0,
             }
 
-            # Add BLAS-specific optimizations if enabled
-            if self.config.enable_blas:
-                model_params.update({
-                    "blas_vendor": self.config.blas_vendor,
-                })
-
-            # Add native optimizations if enabled
-            if self.config.enable_native:
-                model_params["use_native"] = True
-
             # Only enable GPU offloading if explicitly requested and available
-            # For lightweight devices, CPU-only is often more predictable
             if self.config.enable_gpu_offload:
                 if self.config.auto_detect_gpu:
                     self._gpu_available = self._detect_gpu_availability()
                     logger.info(f"GPU detection: {'Available' if self._gpu_available else 'Not available'}")
-                
+
                 if self._gpu_available:
-                    if self.config.gpu_layers == -1:
-                        # Conservative GPU offloading for balanced performance
-                        if self.config.model_size == "1.5b":
-                            self.config.gpu_layers = 8
-                        elif self.config.model_size == "3b":
-                            self.config.gpu_layers = 16
-                        elif self.config.model_size == "7b":
-                            self.config.gpu_layers = 24  # Only for larger models where it makes sense
-                        else:
-                            self.config.gpu_layers = 16
-                    
+                    # -1 = offload every layer; flash attention is a strict win
+                    # on Metal (embedded fa_* kernels verified in libggml-metal).
                     model_params["n_gpu_layers"] = self.config.gpu_layers
+                    model_params["flash_attn"] = True
                     logger.info(f"GPU offloading enabled: {self.config.gpu_layers} layers")
                 else:
-                    model_params["n_gpu_layers"] = 0
                     logger.info("GPU not available, using CPU-only mode")
             else:
-                model_params["n_gpu_layers"] = 0
                 logger.info("Using CPU-only mode for consistent performance")
 
             # Load the model (this may take a while)
@@ -329,26 +316,6 @@ class LLMEngine:
         except Exception as e:
             logger.error(f"Failed to initialize LLM engine: {e}")
             raise
-
-    def _configure_blas(self) -> None:
-        """Configure BLAS acceleration environment variables"""
-        # Set optimal thread counts for BLAS operations
-        if self.config.blas_vendor.lower() == "openblas":
-            os.environ.setdefault("OPENBLAS_NUM_THREADS", str(self.config.threads))
-            os.environ.setdefault("GOTO_NUM_THREADS", str(self.config.threads))
-
-        elif self.config.blas_vendor.lower() == "mkl":
-            os.environ.setdefault("MKL_NUM_THREADS", str(self.config.threads))
-            os.environ.setdefault("MKL_DYNAMIC", "FALSE")
-
-        elif self.config.blas_vendor.lower() == "blis":
-            os.environ.setdefault("BLIS_NUM_THREADS", str(self.config.threads))
-
-        # Set general threading environment
-        os.environ.setdefault("OMP_NUM_THREADS", str(self.config.threads))
-        os.environ.setdefault("NUMEXPR_NUM_THREADS", str(self.config.threads))
-
-        logger.info(f"Configured {self.config.blas_vendor} with {self.config.threads} threads")
 
     def _is_ready(self) -> bool:
         """Ready if initialized with any backend (llamacpp needs self.model)."""
@@ -367,7 +334,30 @@ class LLMEngine:
             "top_p": kwargs.get("top_p", self.config.top_p),
             "top_k": kwargs.get("top_k", self.config.top_k),
             "num_predict": min(kwargs.get("max_tokens", self.config.max_tokens), 512),
+            # Ollama silently defaults to a 2048 window; without num_ctx an
+            # over-budget RAG prompt is rejected with a confusing 400.
+            "num_ctx": self.config.context_length,
         }
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Conservative token estimate without a tokenizer: words*1.35, but at
+        least chars/3.2 (dense code and markdown tokenize worse than prose)."""
+        return max(1, math.ceil(max(len(text.split()) * 1.35, len(text) / 3.2)))
+
+    def _fit_text(self, text: str, token_budget: int) -> str:
+        """Word-aware truncation of ``text`` to roughly ``token_budget`` tokens."""
+        if token_budget <= 0 or self._estimate_tokens(text) <= token_budget:
+            return text if token_budget > 0 else ""
+        ratio = self._estimate_tokens(text) / max(1, len(text.split()))
+        keep = max(1, int(token_budget * 0.92 / ratio))
+        out = " ".join(text.split()[:keep])
+        # One huge no-space token survives word truncation — bound it by
+        # characters (using the text's own chars/token ratio) so the prompt
+        # budget always holds. Normal prose is already under budget here.
+        if self._estimate_tokens(out) > token_budget:
+            chars_per_token = len(out) / max(1, self._estimate_tokens(out))
+            out = out[:max(16, int(token_budget * 0.92 * chars_per_token))].rstrip()
+        return out + " …"
 
     async def _generate_ollama(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """Generate via Ollama in a thread pool (httpx is sync here)."""
@@ -404,8 +394,19 @@ class LLMEngine:
             if isinstance(text, list):  # chat output can be message dicts
                 text = text[-1].get("content", "") if isinstance(text[-1], dict) else str(text[-1])
             return text
-        text = await loop.run_in_executor(None, _run)
+        text = await loop.run_in_executor(None, lambda: self._with_decode_lock(_run))
         return text.strip()
+
+    def _with_decode_lock(self, fn):
+        """Run ``fn()`` holding the decode lock.
+
+        The lock is owned by the worker thread, not the caller's coroutine:
+        if a caller is cancelled while awaiting, the running decode still
+        completes under the lock before any next call can enter (overlapping
+        llama_decode calls abort in ggml).
+        """
+        with self._decode_lock:
+            return fn()
 
     async def generate(
         self,
@@ -419,19 +420,28 @@ class LLMEngine:
             raise RuntimeError("LLM engine not initialized")
 
         try:
-            messages = self._build_messages(message, context=context, system_prompt=system_prompt)
+            messages = self._build_messages(
+                message, context=context, system_prompt=system_prompt,
+                max_tokens=kwargs.get("max_tokens"),
+            )
             if self.backend_name == "ollama":
                 return await self._generate_ollama(messages, **kwargs)
             if self.backend_name == "huggingface":
-                return await self._generate_hf(messages, **kwargs)
+                async with self._engine_lock:
+                    return await self._generate_hf(messages, **kwargs)
             generation_params = self._build_generation_params(messages, stream=False, **kwargs)
 
-            # Run generation in thread pool to avoid blocking
+            # Run generation in a thread pool to avoid blocking. The decode
+            # lock is taken inside the worker thread (see _with_decode_lock);
+            # the async lock serializes queueing.
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.model.create_chat_completion(**generation_params)
-            )
+            async with self._engine_lock:
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: self._with_decode_lock(
+                        lambda: self.model.create_chat_completion(**generation_params)
+                    ),
+                )
 
             # Extract the response text
             if "choices" in response and response["choices"]:
@@ -456,7 +466,10 @@ class LLMEngine:
             raise RuntimeError("LLM engine not initialized")
 
         try:
-            messages = self._build_messages(message, context=context, system_prompt=system_prompt)
+            messages = self._build_messages(
+                message, context=context, system_prompt=system_prompt,
+                max_tokens=kwargs.get("max_tokens"),
+            )
             if self.backend_name in ("ollama", "huggingface"):
                 # Chunk the full response for a uniform streaming API
                 text = await self.generate(message, context=context, system_prompt=system_prompt, **kwargs)
@@ -468,23 +481,47 @@ class LLMEngine:
                 return
             generation_params = self._build_generation_params(messages, stream=True, **kwargs)
 
-            # Stream the response
-            loop = asyncio.get_event_loop()
-            stream = await loop.run_in_executor(
-                None,
-                lambda: self.model.create_chat_completion(**generation_params)
-            )
+            # Producer thread owns the decode lock for the whole stream and
+            # emits chunks to the event loop via call_soon_threadsafe (the
+            # only thread-safe way into an asyncio.Queue); the loop never
+            # runs a decode step itself. If the consumer is cancelled or
+            # abandons the iterator, `closed` is set and the producer stops
+            # at its next chunk — the lock is always released by its owner
+            # thread, never stuck behind an abandoned generator.
+            loop = asyncio.get_running_loop()
+            chunks_q: asyncio.Queue = asyncio.Queue()
+            closed = threading.Event()
 
-            for chunk in stream:
-                # Allow external cancellation
-                if stop_event and stop_event.is_set():
-                    break
-                if "choices" in chunk and chunk["choices"]:
-                    delta = chunk["choices"][0].get("delta", {})
-                    if "content" in delta:
-                        yield delta["content"]
-                # Yield control to event loop for backpressure
-                await asyncio.sleep(0)
+            def _produce() -> None:
+                def emit(item) -> None:
+                    if not closed.is_set():
+                        loop.call_soon_threadsafe(chunks_q.put_nowait, item)
+                try:
+                    stream = self.model.create_chat_completion(**generation_params)
+                    for chunk in stream:
+                        if closed.is_set() or (stop_event is not None and stop_event.is_set()):
+                            break
+                        emit(chunk)
+                except Exception as e:
+                    logger.error(f"Streaming generation failed: {e}")
+                    emit(e)
+                finally:
+                    emit(None)  # sentinel: end of stream
+
+            loop.run_in_executor(None, lambda: self._with_decode_lock(_produce))
+            try:
+                while True:
+                    item = await chunks_q.get()
+                    if item is None:
+                        break
+                    if isinstance(item, Exception):
+                        raise item
+                    if "choices" in item and item["choices"]:
+                        delta = item["choices"][0].get("delta", {})
+                        if "content" in delta:
+                            yield delta["content"]
+            finally:
+                closed.set()
 
         except Exception as e:
             logger.error(f"Error in streaming generation: {e}")
@@ -495,21 +532,34 @@ class LLMEngine:
         message: str,
         context: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None,
     ) -> List[Dict[str, str]]:
-        """Build conversation messages consistently for regular and streaming generation."""
-        messages: List[Dict[str, str]] = []
+        """Build conversation messages bounded to the configured context window.
+
+        RAG passages arrive ranked best-first, so keep the strongest ones and
+        hard-cap the whole prompt: Ollama rejects oversized requests with a
+        400 and llama.cpp silently truncates from the left.
+        """
+        gen_tokens = min(max_tokens if max_tokens is not None else self.config.max_tokens, 512)
+        budget = max(256, self.config.context_length - gen_tokens - 64)  # 64: chat-template overhead
+
+        system_content = self._fit_text(system_prompt or DEFAULT_SYSTEM_PROMPT, budget // 2)
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system_content}]
+        used = self._estimate_tokens(system_content)
+        reserve = min(self._estimate_tokens(message), budget - used)
+
+        for ctx in (context or [])[:3]:
+            remaining = budget - used - reserve
+            if remaining < 128:
+                break
+            ctx = self._fit_text(ctx, min(remaining, budget // 3))
+            used += self._estimate_tokens(ctx)
+            messages.append({"role": "system", "content": f"Context: {ctx}"})
 
         messages.append({
-            "role": "system",
-            "content": system_prompt or DEFAULT_SYSTEM_PROMPT,
+            "role": "user",
+            "content": self._fit_text(message, max(64, min(reserve, budget - used))),
         })
-
-        if context:
-            recent_context = context[-3:] if len(context) > 3 else context
-            for ctx in recent_context:
-                messages.append({"role": "system", "content": f"Context: {ctx}"})
-
-        messages.append({"role": "user", "content": message})
         return messages
 
     def _build_generation_params(
@@ -578,8 +628,6 @@ class LLMEngine:
                 "model_size": self.config.model_size,
                 "context_length": self.config.context_length,
                 "threads": self.config.threads,
-                "blas_enabled": self.config.enable_blas,
-                "blas_vendor": self.config.blas_vendor if self.config.enable_blas else None,
                 "model_path": model_path,
                 "file_size_bytes": file_size,
                 "file_size_gb": file_size / (1024*1024*1024) if file_size else None,

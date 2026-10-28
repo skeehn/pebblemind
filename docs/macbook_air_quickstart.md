@@ -102,9 +102,9 @@ llm:
   context_length: 2048  # Reduced for memory efficiency
   max_tokens: 256  # Conservative for speed
   threads: 4  # Conservative for thermal management
-  batch_size: 256  # Reduced for memory
-  enable_blas: true  # Essential for CPU performance
-  enable_gpu_offload: false  # CPU-only for consistency
+  batch_size: 512  # Prompt-processing batch
+  enable_gpu_offload: true  # Metal on Apple Silicon (default on macOS)
+  gpu_layers: -1  # Offload all layers — 1.5B Q4_K_M is only ~1.1GB
 
 rag:
   max_results: 3  # Reduced for efficiency

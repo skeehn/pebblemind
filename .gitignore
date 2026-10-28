@@ -177,3 +177,7 @@ certificates/
 *.backup
 *.old
 data.backup/
+
+# SQLite runtime journals
+*.db-journal
+data/*.db-journal

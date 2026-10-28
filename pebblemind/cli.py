@@ -1,8 +1,10 @@
 """Command Line Interface for PebbleMind"""
 
 import asyncio
+import os
 import sys
 import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -799,19 +801,25 @@ def add_docs(ctx: click.Context, documents: tuple, recursive: bool):
             path = Path(doc_path)
 
             if path.is_file():
-                # Single file
-                if path.suffix.lower() in ['.txt', '.md', '.pdf', '.docx']:
+                # Single file — only text formats are safe with read_text();
+                # PDFs/DOCX are binary and need proper extractors.
+                if path.suffix.lower() in ['.txt', '.md']:
                     doc_list.append({
                         "content": path.read_text(),
                         "metadata": {"source": str(path), "type": path.suffix}
                     })
+                elif path.suffix.lower() in ['.pdf', '.docx']:
+                    console.print(
+                        f"[yellow]Skipping {path.name}: PDF/DOCX extraction needs a "
+                        f"converter (e.g. pdftotext). Convert to .txt or .md first.[/yellow]"
+                    )
                 else:
                     console.print(f"[yellow]Skipping unsupported file: {path}[/yellow]")
 
             elif path.is_dir() and recursive:
                 # Directory with recursion
                 for file_path in path.rglob("*"):
-                    if file_path.is_file() and file_path.suffix.lower() in ['.txt', '.md', '.pdf', '.docx']:
+                    if file_path.is_file() and file_path.suffix.lower() in ['.txt', '.md']:
                         try:
                             doc_list.append({
                                 "content": file_path.read_text(),
@@ -819,6 +827,8 @@ def add_docs(ctx: click.Context, documents: tuple, recursive: bool):
                             })
                         except Exception as e:
                             console.print(f"[yellow]Error reading {file_path}: {e}[/yellow]")
+                    elif file_path.is_file() and file_path.suffix.lower() in ['.pdf', '.docx']:
+                        console.print(f"[yellow]Skipping {file_path.name}: binary format (convert to .txt/.md)[/yellow]")
 
         if not doc_list:
             console.print("[red]No valid documents found[/red]")
@@ -834,6 +844,59 @@ def add_docs(ctx: click.Context, documents: tuple, recursive: bool):
 
     except Exception as e:
         console.print(f"[red]Error adding documents: {e}[/red]")
+
+
+@cli.command("ask-docs")
+@click.argument("question")
+@click.option("--k", default=3, help="Number of passages to retrieve")
+@click.option("--no-answer", is_flag=True, help="Only show retrieved passages (skip LLM answer)")
+@click.pass_context
+def ask_docs(ctx: click.Context, question: str, k: int, no_answer: bool):
+    """Ask a question about previously added documents (RAG)"""
+    config = ctx.obj["config"]
+
+    try:
+        pebblemind = quick_start()
+
+        async def answer():
+            if pebblemind.rag_system is None:
+                console.print("[red]RAG system unavailable — check your config[/red]")
+                return
+            hits = await pebblemind.rag_system.search(question, k=k)
+            if not hits:
+                console.print("[yellow]No matching documents. Add some first:[/yellow]")
+                console.print("  pebblemind add-docs <files>")
+                return
+
+            console.print("\n[bold blue]📄 Retrieved passages[/bold blue]")
+            context = []
+            for i, h in enumerate(hits, 1):
+                src = h.get("metadata", {}).get("source", "unknown")
+                score = h.get("score", 0)
+                content = h.get("content", "")
+                context.append(content)
+                console.print(f"\n[bold]{i}.[/bold] [dim](score {score:.3f}, {src})[/dim]")
+                console.print(f"   {content[:300]}{'…' if len(content) > 300 else ''}")
+
+            if no_answer:
+                return
+            if pebblemind.llm_engine is None:
+                console.print("[yellow]No LLM backend — showing passages only[/yellow]")
+                return
+
+            t0 = time.perf_counter()
+            reply = await pebblemind.llm_engine.generate(
+                f"Answer in at most 80 words using ONLY the provided context.\n\n"
+                f"Context:\n" + "\n\n".join(context) + f"\n\nQuestion: {question}",
+                max_tokens=120,
+            )
+            dt = time.perf_counter() - t0
+            console.print(f"\n[bold green]💬 Answer[/bold green] [dim]({dt:.1f}s)[/dim]")
+            console.print(reply)
+
+        asyncio.run(answer())
+    except Exception as e:
+        console.print(f"[red]Error in ask-docs: {e}[/red]")
 
 
 @cli.command()
@@ -1013,9 +1076,79 @@ def init(ctx: click.Context, output: Optional[str]):
         console.print(f"[red]Error creating configuration: {e}[/red]")
 
 
+@cli.group()
+def mcp():
+    """Model Context Protocol: serve PebbleMind over MCP or inspect servers"""
+
+
+@mcp.command("serve")
+@click.pass_context
+def mcp_serve(ctx: click.Context):
+    """Run PebbleMind as an MCP server (stdio JSON-RPC)"""
+    from .mcp_server import MCPServer
+
+    async def _serve():
+        server = MCPServer()
+        await server.serve_stdio()
+
+    try:
+        # stdout is reserved for JSON-RPC frames — diagnostics go to stderr.
+        click.echo("PebbleMind MCP server running on stdio (Ctrl+C to stop)", err=True)
+        asyncio.run(_serve())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        click.echo(f"MCP server error: {e}", err=True)
+
+
+@mcp.command("list")
+@click.pass_context
+def mcp_list(ctx: click.Context):
+    """List tools exposed by configured MCP servers"""
+    config = ctx.obj["config"]
+    servers = getattr(config.mcp, "servers", {})
+    if not servers:
+        console.print("No MCP servers configured. Add to pebblemind.yaml:")
+        console.print("\n[bold]mcp:[/bold]")
+        console.print("  servers:")
+        console.print('    filesystem: {command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]}')
+        return
+    from .mcp_client import MCPClientManager
+
+    async def _list():
+        mgr = MCPClientManager.from_config(servers)
+        await mgr.start()
+        for name, tools in mgr.all_tools().items():
+            console.print(f"\n[bold green]{name}[/bold green] ({len(tools)} tools)")
+            for t in tools:
+                console.print(f"  • [bold]{t.get('name')}[/bold] — {t.get('description', '')[:80]}")
+        await mgr.stop()
+
+    try:
+        asyncio.run(_list())
+    except Exception as e:
+        console.print(f"[red]MCP list error: {e}[/red]")
+
+
 def main():
-    """Main entry point"""
-    cli()
+    """CLI entry point.
+
+    Hard-exits via os._exit once the command finishes: the bundled ggml
+    Metal backend aborts during exit-time device teardown
+    (GGML_ASSERT([rsets->data count] == 0) — ggml-org/llama.cpp#17869),
+    which would turn successful runs into SIGABRT for return-code checks.
+    """
+    code = 0
+    try:
+        cli()
+    except SystemExit as e:
+        if isinstance(e.code, int) and e.code:
+            code = e.code
+    except KeyboardInterrupt:
+        code = 130
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 
 if __name__ == "__main__":
