@@ -1,5 +1,6 @@
 """Real-document RAG tests: ingest actual public documents (RFC 2324 and a
-NASA mission overview), then verify retrieval and grounded answers.
+NASA mission overview) among competing documents, then verify retrieval and
+grounded answers.
 
 The excerpts are real documents, not synthetic filler:
 - RFC 2324 (HTCPCP) is freely redistributable per its copyright notice,
@@ -19,6 +20,12 @@ from pebblemind.core.llm import LLMEngine
 REPO = Path(__file__).resolve().parent.parent
 MODELS_15B = REPO / "models" / "qwen2.5-1.5b-instruct-q4_k_m.gguf"
 needs_15b = pytest.mark.skipif(not MODELS_15B.exists(), reason="1.5B GGUF not downloaded")
+try:
+    import llama_cpp  # noqa: F401
+    HAS_LLAMACPP = True
+except ImportError:
+    HAS_LLAMACPP = False
+needs_llamacpp = pytest.mark.skipif(not HAS_LLAMACPP, reason="llama-cpp-python not installed")
 
 
 def _save_bench(name: str, payload: dict) -> None:
@@ -54,6 +61,14 @@ APOLLO11 = (
     "splashed down in the Pacific Ocean on July 24, 1969, 13 miles from the recovery ship USS Hornet."
 )
 
+# A competing filler document so retrieval must rank, not merely find.
+DECOY = (
+    "Sourdough Starter Maintenance Guide. Feed your starter daily with equal masses of flour "
+    "and water. A healthy starter doubles within six hours at room temperature. Hooch, a gray "
+    "liquid on top, signals hunger; stir it back in or pour it off before feeding. For baking, "
+    "use a ratio of 100 grams starter, 350 grams water, and 500 grams bread flour."
+)
+
 QUESTIONS = {
     "rfc2324": [
         ("What HTTP error code should a teapot return when someone tries to brew coffee with it?", "418"),
@@ -81,48 +96,46 @@ async def _rag_with(docs):
 
 
 class TestRealDocuments:
-    @staticmethod
-    async def _run(doc_text: str, source: str, questions):
-        rag, tmp_db = await _rag_with([{"content": doc_text, "metadata": {"source": source}}])
-        emb_kind = type(rag.embedding_model).__name__
-        top3_hits, details = 0, []
-        for q, marker in questions:
-            hits = await rag.search(q, k=3)
-            srcs = [h.get("metadata", {}).get("source") for h in hits]
-            ok = source in srcs
-            top3_hits += ok
-            details.append({"q": q, "expected_marker": marker, "got_sources": srcs, "retrieved": ok})
-        result = {"embedding": emb_kind, "retrieved": top3_hits, "total": len(questions), "details": details}
+    async def test_real_docs_retrieval_among_competing_docs(self):
+        """Both real docs ingested together with a decoy: every question must
+        rank its own document first AND return the expected fact — retrieval,
+        not the luck of there being only one document."""
+        rag, tmp_db = await _rag_with([
+            {"content": RFC2324, "metadata": {"source": "rfc2324"}},
+            {"content": APOLLO11, "metadata": {"source": "apollo11"}},
+            {"content": DECOY, "metadata": {"source": "decoy"}},
+        ])
         try:
-            tmp_db.unlink(missing_ok=True)
-        except Exception:
-            pass
-        return result
-
-    async def test_rfc2324_retrieval(self):
-        """Real document #1: RFC 2324 — every question must retrieve it."""
-        result = await self._run(RFC2324, "rfc2324", QUESTIONS["rfc2324"])
-        _save_bench("t6_real_docs", {"rfc2324": result})
-        if result["embedding"] != "HashEmbedding":
-            assert result["retrieved"] == result["total"], result
-        else:
-            assert result["retrieved"] >= 1, result
-
-    async def test_apollo11_retrieval(self):
-        """Real document #2: NASA Apollo 11 overview — every question must retrieve it."""
-        result = await self._run(APOLLO11, "apollo11", QUESTIONS["apollo11"])
-        bench = json.loads((REPO / "data" / "benchmarks" / "t6_real_docs.json").read_text())
-        bench["apollo11"] = result
-        _save_bench("t6_real_docs", bench)
-        if result["embedding"] != "HashEmbedding":
-            assert result["retrieved"] == result["total"], result
-        else:
-            assert result["retrieved"] >= 1, result
+            details = []
+            for source, questions in QUESTIONS.items():
+                for q, marker in questions:
+                    hits = await rag.search(q, k=3)
+                    top1_src = hits[0].get("metadata", {}).get("source") if hits else None
+                    top1_hit = top1_src == source and marker.lower() in hits[0].get("content", "").lower()
+                    any_hit = marker.lower() in " ".join(h.get("content", "") for h in hits).lower()
+                    details.append({"q": q, "got_sources": [top1_src], "top1_hit": top1_hit, "retrieved": any_hit})
+            emb_kind = type(rag.embedding_model).__name__
+            result = {"embedding": emb_kind,
+                      "top1_hits": sum(d["top1_hit"] for d in details),
+                      "retrieved": sum(d["retrieved"] for d in details),
+                      "total": len(details), "details": details}
+            _save_bench("t6_real_docs", result)
+            if result["embedding"] != "HashEmbedding":
+                assert result["top1_hits"] == result["total"], result
+            else:
+                assert result["retrieved"] >= 3, result
+        finally:
+            await rag.cleanup()
+            try:
+                tmp_db.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     @needs_15b
+    @needs_llamacpp
     async def test_grounded_answers_cite_real_facts(self):
-        """Answers must contain the real facts (418, Collins, splashdown)."""
-        engine = LLMEngine(LLMConfig(model_path=str(MODELS_15B), model_size="1.5b",
+        """Answers must contain the real facts (418, Collins) with the doc as context."""
+        engine = LLMEngine(LLMConfig(model_path=str(MODELS_15B), model_size="1.5b", backend="llamacpp",
                                      enable_gpu_offload=True, gpu_layers=99))
         await engine.initialize()
         cases = [

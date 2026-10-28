@@ -147,6 +147,8 @@ class PebbleMind:
         # Response cache: serves identical side-effect-free queries instantly
         from .cache.response_cache import ResponseCache
         self.response_cache: ResponseCache = ResponseCache(max_size=256, max_memory_mb=64)
+        # MCP client manager (created in initialize() only when servers are configured)
+        self.mcp: Optional["MCPClientManager"] = None
 
         # Component status
         self._initialized = False
@@ -308,6 +310,11 @@ class PebbleMind:
             if self.api_server:
                 await self.api_server.stop()
 
+            # Spawned MCP servers are child processes — stop them, or they
+            # outlive the assistant.
+            if self.mcp:
+                await self.mcp.stop()
+
             # Cleanup components
             if self.llm_engine:
                 await self.llm_engine.cleanup()
@@ -355,7 +362,7 @@ class PebbleMind:
             )
             cache_key = (
                 self.response_cache._generate_key(
-                    original_message, use_rag, enhance_reasoning, reasoning_type
+                    original_message, use_rag, enhance_reasoning, reasoning_type, **kwargs
                 ) if cacheable else None
             )
             if cacheable:
@@ -579,6 +586,10 @@ class PebbleMind:
 
         if self.rag_system:
             await self.rag_system.add_documents(documents)
+            # Cached answers keyed to the old corpus would go stale after an
+            # ingest; drop them so new documents are visible immediately.
+            if self.response_cache:
+                await self.response_cache.clear()
         else:
             logger.warning("RAG system not initialized, cannot add documents")
 

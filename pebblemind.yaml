@@ -20,8 +20,6 @@ llm:
   batch_size: 512
   enable_gpu_offload: true   # Metal on Apple Silicon (default there), CUDA/OpenCL elsewhere
   gpu_layers: -1             # offload all layers; -1 fits ≤7B Q4_K_M in 16GB unified memory
-  enable_gpu_offload: false  # Enable for mixed CPU/GPU inference
-  gpu_layers: -1  # Number of layers to offload (-1 for auto)
   auto_detect_gpu: true  # Automatically detect GPU availability
 
 # Voice Processing Configuration

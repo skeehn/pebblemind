@@ -130,11 +130,8 @@ async def main() -> None:
         mark("api_openai_completion", t0)
         assert r.status_code == 200 and r.json()["choices"], r.text[:300]
         print(f"  🌐 API says: {r.json()['choices'][0]['message']['content'][:60]!r}")
-        serve_task.cancel()
-        try:
-            await serve_task
-        except asyncio.CancelledError:
-            pass  # expected on shutdown
+        server.server.should_exit = True  # graceful uvicorn shutdown (no lifespan traceback)
+        await serve_task
 
         # --- 7. MCP round-trip with streaming progress
         t0 = time.perf_counter()

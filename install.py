@@ -198,7 +198,7 @@ def download_model(model_size: str, force: bool = False) -> bool:
         },
         "7b": {
             "url": "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-            "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+            "filename": "qwen2.5-7b-instruct-q4_k_m.gguf",
             "size_mb": 4680,
             "sha256": None
         }
@@ -268,6 +268,7 @@ def create_config(model_size: str, sys_info: dict) -> bool:
     # Optimize settings based on system
     threads = min(6, max(2, sys_info['cpu_count'] - 2))
     context_length = 2048 if sys_info['memory_gb'] < 12 else 4096
+    gpu_offload = "true" if sys_info['system'] == "Darwin" else "false"
 
     models = {
         "1.5b": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
@@ -290,12 +291,9 @@ llm:
   top_k: 40
   threads: {threads}  # Optimized for {sys_info['cpu_count']} CPU cores
   batch_size: 512
-  enable_blas: true
-  blas_vendor: "OpenBLAS"
-  enable_gpu_offload: false  # Set to true if you have a GPU
-  gpu_layers: 0
+  enable_gpu_offload: {gpu_offload}  # Metal on Apple Silicon (default there)
+  gpu_layers: -1  # offload all layers; fits ≤7B Q4_K_M in 16GB unified memory
   auto_detect_gpu: true
-  enable_native: true
 
 # Voice Configuration (optional)
 voice:

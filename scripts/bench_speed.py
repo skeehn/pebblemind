@@ -66,7 +66,11 @@ async def main() -> None:
         await bench_llamacpp("llamacpp qwen3-4B Metal full offload + flash-attn",
                              LLMConfig(model_path=str(Q3), model_name="Qwen3-4B"), results)
     for label, model in [("ollama qwen2.5:1.5b", "qwen2.5:1.5b"), ("ollama qwen3:4b", "qwen3:4b"), ("ollama qwen2.5:7b", "qwen2.5:7b")]:
-        await bench_ollama(label, model, host, results)
+        try:
+            await bench_ollama(label, model, host, results)
+        except Exception as e:
+            # Ollama down or model missing — keep the llama.cpp results.
+            print(f"{label:55s} SKIPPED ({e})")
 
     out = {"date": str(date.today()), "prompt": PROMPT, "max_tokens": N_TOKENS, "results": results}
     dest = REPO / "data" / "benchmarks" / f"speed_{date.today()}.json"

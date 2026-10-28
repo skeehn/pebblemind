@@ -55,25 +55,31 @@ class MCPServerSession:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
                 env={**dict(__import__("os").environ), **self.config.env},
+                limit=64 * 1024 * 1024,  # tool results can ride on one big JSON line
             )
-        init = await self._request(
-            "initialize",
-            {
-                "protocolVersion": MCP_PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {"name": "pebblemind", "version": "0.1.0"},
-            },
-        )
-        if init is None:
-            raise RuntimeError(f"MCP server '{self.name}' did not respond to initialize")
-        self.server_info = init.get("serverInfo", init)
-        await self._notify("notifications/initialized")
         try:
-            listed = await self._request("tools/list", {})
-            self.tools = (listed or {}).get("tools", [])
-        except Exception as e:  # tools are optional per spec
-            logger.debug("tools/list failed for %s: %s", self.name, e)
-            self.tools = []
+            init = await self._request(
+                "initialize",
+                {
+                    "protocolVersion": MCP_PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "pebblemind", "version": "0.1.0"},
+                },
+            )
+            if init is None:
+                raise RuntimeError(f"MCP server '{self.name}' did not respond to initialize")
+            self.server_info = init.get("serverInfo", init)
+            await self._notify("notifications/initialized")
+            try:
+                listed = await self._request("tools/list", {})
+                self.tools = (listed or {}).get("tools", [])
+            except Exception as e:  # tools are optional per spec
+                logger.debug("tools/list failed for %s: %s", self.name, e)
+                self.tools = []
+        except BaseException:
+            # Handshake failed — don't leak the spawned child process.
+            await self.stop()
+            raise
         logger.info("MCP session '%s' ready: %d tools", self.name, len(self.tools))
 
     async def stop(self) -> None:
@@ -116,11 +122,12 @@ class MCPServerSession:
     async def _request(self, method: str, params: Dict[str, Any], on_progress=None) -> Optional[Dict[str, Any]]:
         self._next_id += 1
         rid = self._next_id
-        await self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        payload = {"jsonrpc": "2.0", "id": rid, "method": method, "params": params}
         if self.config.command:  # stdio
+            await self._send(payload)
             resp = await self._read_response(rid, self.config.timeout, on_progress=on_progress)
         else:  # http
-            resp = await self._http_request({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+            resp = await self._http_request(payload)
         if resp is None:
             return None
         if "error" in resp:

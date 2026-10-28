@@ -10,6 +10,7 @@ import asyncio
 import logging
 import math
 import re
+import threading
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 import platform
@@ -69,6 +70,11 @@ class LLMEngine:
         # Serialize local-engine generation; Ollama (separate server process)
         # needs no lock.
         self._engine_lock = asyncio.Lock()
+        # Threading lock owned by the worker thread around llama_decode /
+        # HF decode: a cancelled caller releases the asyncio lock, but the
+        # decode thread keeps this one until decoding finishes (overlapping
+        # llama_decode calls abort in ggml).
+        self._decode_lock = threading.Lock()
 
     def _detect_gpu_availability(self) -> bool:
         """Detect if GPU is available for offloading"""
@@ -344,7 +350,14 @@ class LLMEngine:
             return text if token_budget > 0 else ""
         ratio = self._estimate_tokens(text) / max(1, len(text.split()))
         keep = max(1, int(token_budget * 0.92 / ratio))
-        return " ".join(text.split()[:keep]) + " …"
+        out = " ".join(text.split()[:keep])
+        # One huge no-space token survives word truncation — bound it by
+        # characters (using the text's own chars/token ratio) so the prompt
+        # budget always holds. Normal prose is already under budget here.
+        if self._estimate_tokens(out) > token_budget:
+            chars_per_token = len(out) / max(1, self._estimate_tokens(out))
+            out = out[:max(16, int(token_budget * 0.92 * chars_per_token))].rstrip()
+        return out + " …"
 
     async def _generate_ollama(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """Generate via Ollama in a thread pool (httpx is sync here)."""
@@ -381,8 +394,19 @@ class LLMEngine:
             if isinstance(text, list):  # chat output can be message dicts
                 text = text[-1].get("content", "") if isinstance(text[-1], dict) else str(text[-1])
             return text
-        text = await loop.run_in_executor(None, _run)
+        text = await loop.run_in_executor(None, lambda: self._with_decode_lock(_run))
         return text.strip()
+
+    def _with_decode_lock(self, fn):
+        """Run ``fn()`` holding the decode lock.
+
+        The lock is owned by the worker thread, not the caller's coroutine:
+        if a caller is cancelled while awaiting, the running decode still
+        completes under the lock before any next call can enter (overlapping
+        llama_decode calls abort in ggml).
+        """
+        with self._decode_lock:
+            return fn()
 
     async def generate(
         self,
@@ -407,13 +431,16 @@ class LLMEngine:
                     return await self._generate_hf(messages, **kwargs)
             generation_params = self._build_generation_params(messages, stream=False, **kwargs)
 
-            # Run generation in thread pool to avoid blocking; the engine lock
-            # prevents concurrent llama_decode calls (which abort in ggml).
+            # Run generation in a thread pool to avoid blocking. The decode
+            # lock is taken inside the worker thread (see _with_decode_lock);
+            # the async lock serializes queueing.
             loop = asyncio.get_event_loop()
             async with self._engine_lock:
                 response = await loop.run_in_executor(
                     None,
-                    lambda: self.model.create_chat_completion(**generation_params)
+                    lambda: self._with_decode_lock(
+                        lambda: self.model.create_chat_completion(**generation_params)
+                    ),
                 )
 
             # Extract the response text
@@ -454,26 +481,47 @@ class LLMEngine:
                 return
             generation_params = self._build_generation_params(messages, stream=True, **kwargs)
 
-            # Stream while holding the engine lock: the lock releases when the
-            # generator completes or is closed, so concurrent callers queue up
-            # instead of crashing ggml with overlapping decodes.
-            loop = asyncio.get_event_loop()
-            async with self._engine_lock:
-                stream = await loop.run_in_executor(
-                    None,
-                    lambda: self.model.create_chat_completion(**generation_params)
-                )
+            # Producer thread owns the decode lock for the whole stream and
+            # emits chunks to the event loop via call_soon_threadsafe (the
+            # only thread-safe way into an asyncio.Queue); the loop never
+            # runs a decode step itself. If the consumer is cancelled or
+            # abandons the iterator, `closed` is set and the producer stops
+            # at its next chunk — the lock is always released by its owner
+            # thread, never stuck behind an abandoned generator.
+            loop = asyncio.get_running_loop()
+            chunks_q: asyncio.Queue = asyncio.Queue()
+            closed = threading.Event()
 
-                for chunk in stream:
-                    # Allow external cancellation
-                    if stop_event and stop_event.is_set():
+            def _produce() -> None:
+                def emit(item) -> None:
+                    if not closed.is_set():
+                        loop.call_soon_threadsafe(chunks_q.put_nowait, item)
+                try:
+                    stream = self.model.create_chat_completion(**generation_params)
+                    for chunk in stream:
+                        if closed.is_set() or (stop_event is not None and stop_event.is_set()):
+                            break
+                        emit(chunk)
+                except Exception as e:
+                    logger.error(f"Streaming generation failed: {e}")
+                    emit(e)
+                finally:
+                    emit(None)  # sentinel: end of stream
+
+            loop.run_in_executor(None, lambda: self._with_decode_lock(_produce))
+            try:
+                while True:
+                    item = await chunks_q.get()
+                    if item is None:
                         break
-                    if "choices" in chunk and chunk["choices"]:
-                        delta = chunk["choices"][0].get("delta", {})
+                    if isinstance(item, Exception):
+                        raise item
+                    if "choices" in item and item["choices"]:
+                        delta = item["choices"][0].get("delta", {})
                         if "content" in delta:
                             yield delta["content"]
-                    # Yield control to event loop for backpressure
-                    await asyncio.sleep(0)
+            finally:
+                closed.set()
 
         except Exception as e:
             logger.error(f"Error in streaming generation: {e}")

@@ -279,47 +279,63 @@ class RAGSystem:
 
         Sentences are packed to ~chunk_size words so every chunk is a
         coherent unit — a clause is never cut in half, which used to leave
-        target phrases unindexed on long documents. Text without any
-        sentence punctuation falls back to stride word windows. Duplicate
-        chunks are dropped, preserving order.
+        target phrases unindexed on long documents. Boundaries are preferred,
+        not guaranteed: text without sentence punctuation, and a single
+        sentence longer than chunk_size, fall back to stride word windows
+        (which never emit a trailing window fully covered by its neighbor).
+        Overlap is sentence-aligned; duplicates are dropped, order preserved.
         """
         max_words = self.config.chunk_size
         words = text.split()
         if not words:
             return []
+        stride = max(1, max_words - self.config.chunk_overlap)
         sentences = [s for s in re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", text.strip())) if s]
         if len(sentences) <= 1:
             # No sentence structure (single sentence / bare word list).
-            stride = max(1, max_words - self.config.chunk_overlap)
-            return list(dict.fromkeys(" ".join(words[i:i + max_words]) for i in range(0, len(words), stride)))
+            return list(dict.fromkeys(self._word_windows(words, max_words, stride)))
 
         chunks: List[str] = []
         cur: List[str] = []  # sentences in the current chunk
         for sentence in sentences:
-            if len(sentence.split()) > max_words:
-                # Rare monster sentence: hard-split it with stride windows.
+            sw = sentence.split()
+            if len(sw) > max_words:
+                # Monster sentence: hard-split it with stride windows.
                 if cur:
                     chunks.append(" ".join(cur))
                     cur = []
-                sw = sentence.split()
-                stride = max(1, max_words - self.config.chunk_overlap)
-                chunks.extend(" ".join(sw[i:i + max_words]) for i in range(0, len(sw), stride))
+                chunks.extend(self._word_windows(sw, max_words, stride))
                 continue
-            if cur and sum(len(s.split()) for s in cur) + len(sentence.split()) > max_words:
+            if cur and sum(len(s.split()) for s in cur) + len(sw) > max_words:
                 chunks.append(" ".join(cur))
-                # Sentence-aligned overlap: carry trailing sentence(s) if they
-                # fit in the overlap budget; otherwise start fresh.
+                # Sentence-aligned overlap: carry trailing sentence(s) that
+                # fit both the overlap budget and, with the incoming sentence,
+                # the chunk size; otherwise start fresh.
                 carried, acc = [], 0
                 for prev in reversed(cur):
-                    if acc + len(prev.split()) > self.config.chunk_overlap:
+                    pw = len(prev.split())
+                    if acc + pw > self.config.chunk_overlap or acc + pw + len(sw) > max_words:
                         break
-                    acc += len(prev.split())
+                    acc += pw
                     carried.insert(0, prev)
                 cur = carried
             cur.append(sentence)
         if cur:
             chunks.append(" ".join(cur))
         return list(dict.fromkeys(chunks))
+
+    @staticmethod
+    def _word_windows(words: List[str], size: int, stride: int) -> List[str]:
+        """Fixed word windows with stride; stops after the window that reaches
+        the end so no trailing window is fully covered by its predecessor."""
+        out: List[str] = []
+        i = 0
+        while i < len(words):
+            out.append(" ".join(words[i:i + size]))
+            if i + size >= len(words):
+                break
+            i += stride
+        return out
 
     def _extract_search_terms(self, query: str) -> List[str]:
         r"""Extract normalized terms for fallback text search.

@@ -1092,12 +1092,13 @@ def mcp_serve(ctx: click.Context):
         await server.serve_stdio()
 
     try:
-        console.print("[dim]PebbleMind MCP server running on stdio (Ctrl+C to stop)[/dim]")
+        # stdout is reserved for JSON-RPC frames — diagnostics go to stderr.
+        click.echo("PebbleMind MCP server running on stdio (Ctrl+C to stop)", err=True)
         asyncio.run(_serve())
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        console.print(f"[red]MCP server error: {e}[/red]")
+        click.echo(f"MCP server error: {e}", err=True)
 
 
 @mcp.command("list")

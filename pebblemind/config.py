@@ -166,14 +166,19 @@ def set_config(config: Config) -> None:
 
 
 def load_config(config_path: Optional[str] = None) -> Config:
-    """Load configuration from file or create default.
+    """Load configuration from file, the published global config, or defaults.
 
-    Precedence: explicit path > $PEBBLEMIND_CONFIG env var > ./pebblemind.yaml > defaults.
+    Precedence: explicit path > $PEBBLEMIND_CONFIG env var > already-published
+    global config (so CLI-parsed overrides like --backend / --ollama-model
+    survive the command calling quick_start() with no path) > defaults.
     """
+    global _config
     if not config_path:
         config_path = os.environ.get("PEBBLEMIND_CONFIG") or None
     if config_path and Path(config_path).exists():
         config = Config.from_file(config_path)
+    elif _config is not None:
+        return _config
     else:
         config = Config()
 

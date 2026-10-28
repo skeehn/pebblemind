@@ -259,7 +259,7 @@ pebblemind --help
 - 💰 **Zero Cost** - No API keys, no subscriptions
 - 🌐 **Offline** - Works without internet
 - 🔧 **Hackable** - Python codebase, easy to extend
-- 🧪 **Production-Ready** - 105 passing tests, security hardened
+- 🧪 **Production-Ready** - 104 passing tests, security hardened
 
 ## Support
 

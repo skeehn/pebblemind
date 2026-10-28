@@ -417,10 +417,12 @@ class TestRobustMCPAndWeb:
             "  gpu_layers: 99\n"
             "rag:\n"
             "  embedding_backend: hash\n"
+            f"  vector_db_path: {tmp_path / 'vectors.db'}\n"
         )
         proc = subprocess.Popen(
             [PY, "-m", "pebblemind.mcp_server"],
-            cwd=REPO, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            cwd=REPO, env={**os.environ, "PEBBLEMIND_CONFIG": str(cfg_file)},
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True,
         )
 
@@ -515,10 +517,12 @@ class TestRobustMCPAndWeb:
             "  gpu_layers: 99\n"
             "rag:\n"
             "  embedding_backend: hash\n"
+            f"  vector_db_path: {tmp_path / 'vectors.db'}\n"
         )
         proc = subprocess.Popen(
             [PY, "-m", "pebblemind.mcp_server"],
-            cwd=REPO, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            cwd=REPO, env={**os.environ, "PEBBLEMIND_CONFIG": str(cfg_file)},
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True,
         )
 
@@ -675,19 +679,24 @@ class TestRobustPromptBudget:
 
     def test_chunk_text_no_redundant_overlap_fragments(self):
         """Stride chunking must never emit a chunk fully contained in another
-        (the old implementation double-ingested pure-overlap fragments)."""
+        (the old implementation double-ingested pure-overlap fragments, and a
+        trailing suffix fragment slipped past a prefix-only check)."""
         from pebblemind.config import RAGConfig
         from pebblemind.rag.system import RAGSystem
 
         rag = RAGSystem(RAGConfig(chunk_size=10, chunk_overlap=3, embedding_backend="hash"))
-        words = [f"w{i}" for i in range(40)]
-        chunks = rag._chunk_text(" ".join(words))
-        assert len(chunks) > 1
-        assert all(len(c.split()) <= 10 for c in chunks)
-        for i, a in enumerate(chunks):
-            for j, b in enumerate(chunks):
-                if i != j:
-                    assert a.split() != b.split()[:len(a.split())], (
-                        f"redundant fragment: {a!r} inside {b!r}"
-                    )
+
+        def _inside(a: str, b: str) -> bool:
+            aw, bw = a.split(), b.split()
+            return any(bw[k:k + len(aw)] == aw for k in range(len(bw) - len(aw) + 1))
+
+        for n in (40, 38, 36):  # 38 words: the old tail-chunk bug case
+            words = [f"w{i}" for i in range(n)]
+            chunks = rag._chunk_text(" ".join(words))
+            assert len(chunks) > 1
+            assert all(len(c.split()) <= 10 for c in chunks)
+            for i, a in enumerate(chunks):
+                for j, b in enumerate(chunks):
+                    if i != j:
+                        assert not _inside(a, b), f"redundant fragment: {a!r} inside {b!r}"
         assert rag._chunk_text("") == []

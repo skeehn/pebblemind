@@ -6,8 +6,11 @@ these tools are only registered when the user enables them in config
 (tools.web_access: true) or calls them directly.
 """
 
+import asyncio
+import ipaddress
 import logging
 import re
+import socket
 from html import unescape
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote_plus, urlparse
@@ -31,23 +34,37 @@ _PARA_RE = re.compile(r"\n\s*\n\s*")
 
 
 def is_valid_url(url: str) -> bool:
-    """Basic SSRF guard: http(s) only, hostname required, no private/loopback hosts."""
+    """SSRF guard: http(s) only, hostname required, no private/unroutable hosts.
+
+    IP literals (IPv4/IPv6, IPv4-mapped forms) are parsed with `ipaddress`
+    and must be globally routable — this rejects loopback, RFC1918,
+    link-local, CGNAT, and `::ffff:127.0.0.1`-style forms that prefix
+    matching misses. Hostnames are additionally resolved and re-checked by
+    `web_fetch` (a name that resolves only to internal addresses is refused).
+    """
     try:
         p = urlparse(url)
         if p.scheme not in ("http", "https") or not p.netloc:
             return False
-        host = (p.hostname or "").lower()
+        host = (p.hostname or "").lower().rstrip(".")
         if not host:
             return False
-        if host in ("localhost", "::1", "0.0.0.0"):
-            return False
-        private_prefixes = (
-            "127.", "10.", "192.168.", "169.254.", "0.",
-            *[f"172.{i}." for i in range(16, 32)],
-        )
-        if any(host.startswith(pfx) for pfx in private_prefixes):
-            return False
-        return True
+        try:
+            addr = ipaddress.ip_address(host)
+        except ValueError:
+            # Name, not a literal — trailing-dot and *.localhost tricks.
+            return not (host == "localhost" or host.endswith(".localhost"))
+        return addr.is_global
+    except Exception:
+        return False
+
+
+def _host_resolves_global(host: str) -> bool:
+    """True only if every resolved address for `host` is globally routable."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+        addrs = {ipaddress.ip_address(info[4][0]) for info in infos}
+        return bool(addrs) and all(a.is_global for a in addrs)
     except Exception:
         return False
 
@@ -62,11 +79,32 @@ def _strip_html(html: str, max_chars: int = 20000) -> str:
 
 
 async def web_fetch(url: str, timeout: float = 15.0, max_chars: int = 20000) -> Dict[str, Any]:
-    """Fetch a URL and return cleaned text + metadata."""
+    """Fetch a URL and return cleaned text + metadata.
+
+    Redirects are followed manually so every hop is re-validated — a public
+    page that redirects to an internal address is refused. Hostnames are
+    resolved and checked (best-effort; connection-level rebinding races are
+    out of scope for a dependency-light client).
+    """
     if not is_valid_url(url):
         raise ValueError(f"Invalid or unsafe URL: {url!r}")
-    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, headers={"User-Agent": USER_AGENT}) as client:
-        r = await client.get(url)
+    async with httpx.AsyncClient(follow_redirects=False, timeout=timeout, headers={"User-Agent": USER_AGENT}) as client:
+        for _ in range(5):
+            if not is_valid_url(url):
+                raise ValueError(f"Redirect to unsafe URL: {url!r}")
+            host = (urlparse(url).hostname or "").lower().rstrip(".")
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:  # name — resolve and re-check every address
+                if not await asyncio.to_thread(_host_resolves_global, host):
+                    raise ValueError(f"Unsafe URL (host resolves internally): {url!r}")
+            r = await client.get(url)
+            if r.is_redirect:
+                url = str(r.url.join(r.headers.get("location", "")))
+                continue
+            break
+        else:
+            raise ValueError("Too many redirects")
         r.raise_for_status()
     ctype = r.headers.get("content-type", "")
     if "html" in ctype:

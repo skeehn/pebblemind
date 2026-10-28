@@ -278,7 +278,9 @@ class MCPServer:
     async def serve_stdio(self) -> None:
         """Read newline-delimited JSON-RPC from stdin, write responses to stdout."""
         loop = asyncio.get_running_loop()
-        reader = asyncio.StreamReader()
+        # 64 MiB line limit: add_documents bodies can exceed the 64 KiB default,
+        # and an over-limit line would kill the server loop.
+        reader = asyncio.StreamReader(limit=64 * 1024 * 1024)
         await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin.buffer)
 
         writer = None
@@ -299,6 +301,8 @@ class MCPServer:
                 msg = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(msg, dict):
+                continue
 
             async def _notify(payload: Dict[str, Any]) -> None:
                 out = json.dumps(
@@ -312,7 +316,12 @@ class MCPServer:
                     sys.stdout.write(out)
                     sys.stdout.flush()
 
-            resp = await self.handle(msg, notify=_notify)
+            try:
+                resp = await self.handle(msg, notify=_notify)
+            except Exception as e:
+                # One bad request must not end the server — report and keep serving.
+                logger.exception("MCP request failed")
+                resp = self._error(msg.get("id"), -32603, f"Internal error: {e}") if msg.get("id") is not None else None
             if resp is not None:
                 out = json.dumps(resp, separators=(",", ":")) + "\n"
                 if writer is not None:
