@@ -311,9 +311,13 @@ class PebbleMind:
                 await self.api_server.stop()
 
             # Spawned MCP servers are child processes — stop them, or they
-            # outlive the assistant.
+            # outlive the assistant. Never let MCP shutdown block the
+            # LLM/RAG/cache cleanup below.
             if self.mcp:
-                await self.mcp.stop()
+                try:
+                    await self.mcp.stop()
+                except Exception as e:
+                    logger.warning("MCP shutdown failed (continuing): %s", e)
 
             # Cleanup components
             if self.llm_engine:

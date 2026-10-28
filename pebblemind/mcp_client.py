@@ -83,18 +83,28 @@ class MCPServerSession:
         logger.info("MCP session '%s' ready: %d tools", self.name, len(self.tools))
 
     async def stop(self) -> None:
-        if self.proc:
+        """Terminate the server session. Idempotent; never raises for an
+        already-exited process — a teardown failure must not mask the real
+        cause (e.g. the handshake error that triggered this stop)."""
+        proc, self.proc = self.proc, None  # clear first: failures can't wedge state
+        if proc is None:
+            return
+        try:
+            await self._notify("shutdown")
+        except Exception:
+            pass
+        try:
+            if proc.returncode is None:  # None = still running
+                proc.terminate()
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            else:
+                await proc.wait()
+        except Exception:
             try:
-                await self._notify("shutdown")
-            except Exception:
-                pass
-            try:
-                self.proc.terminate()
-                await asyncio.wait_for(self.proc.wait(), timeout=5)
-            except Exception:
-                if self.proc:
-                    self.proc.kill()
-            self.proc = None
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass  # exited on its own between the checks
 
     # -------------------------------------------------------------- wire
     async def _send(self, payload: Dict[str, Any]) -> None:
@@ -215,8 +225,12 @@ class MCPClientManager:
                 self.sessions[name] = session
 
     async def stop(self) -> None:
-        for session in self.sessions.values():
-            await session.stop()
+        """Stop every session; one dead server must not block the rest."""
+        for name, session in self.sessions.items():
+            try:
+                await session.stop()
+            except Exception as e:
+                logger.warning("MCP session '%s' failed to stop cleanly: %s", name, e)
         self.sessions.clear()
 
     def names(self) -> List[str]:
