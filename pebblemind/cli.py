@@ -441,12 +441,16 @@ def doctor(ctx: click.Context):
     console.print(f"\n[bold]Python:[/bold]")
     if 3 <= py_version.major <= 3 and 10 <= py_version.minor <= 12:
         console.print(f"  ✅ Version {py_version.major}.{py_version.minor}.{py_version.micro}")
-    elif py_version.minor == 13:
-        console.print(f"  ⚠️  Version {py_version.major}.{py_version.minor}.{py_version.micro} (llama-cpp-python may need build tools)")
-        warnings.append("Python 3.13 requires C++ build tools for llama-cpp-python")
+    elif py_version.minor == 9:
+        # Requires-python is >=3.9, so 3.9 works — just outside the CI window.
+        console.print(f"  ⚠️  Version {py_version.major}.{py_version.minor}.{py_version.micro} (works; tested range is 3.10-3.12)")
+        warnings.append("Python 3.9 is below the tested range (3.10-3.12)")
+    elif py_version.minor >= 13:
+        console.print(f"  ⚠️  Version {py_version.major}.{py_version.minor}.{py_version.micro} (works; tested range is 3.10-3.12; llama-cpp-python may need C++ build tools)")
+        warnings.append(f"Python 3.{py_version.minor} is outside the tested range (3.10-3.12); llama-cpp-python may need C++ build tools")
     else:
-        console.print(f"  ❌ Version {py_version.major}.{py_version.minor}.{py_version.micro} (need 3.10-3.12)")
-        issues.append("Python version not in recommended range (3.10-3.12)")
+        console.print(f"  ❌ Version {py_version.major}.{py_version.minor}.{py_version.micro} (need 3.9+)")
+        issues.append("Python version not supported (3.9+ required, 3.10-3.12 tested)")
     
     # Check backends (any ONE working backend = healthy)
     console.print(f"\n[bold]Backends:[/bold]")
